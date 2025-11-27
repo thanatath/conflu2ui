@@ -35,28 +35,34 @@
         <div v-else-if="currentStep === 'ba-conversation'" class="step-container animate-slide-in-up">
           <div class="conversation-container glass">
             <h2>Business Analyst Review</h2>
-            <p class="text-secondary">The BA is reviewing your requirements and may ask clarifying questions.</p>
+            <p class="text-secondary">BA กำลังวิเคราะห์ Requirements และอาจมีคำถามเพื่อความชัดเจน</p>
 
             <MessageStream :messages="sessions.ba.messages" :is-streaming="isStreaming && currentAgent === 'ba'"
               agent-role="ba" />
 
-            <UserPrompt v-if="!showBAConfirmation" placeholder="Type your response here..."
-              hint="Press Cmd/Ctrl+Enter to send" button-text="Send" :disabled="isStreaming" @send="handleBAMessage" />
+            <!-- Show question form if BA has questions -->
+            <BAQuestionForm
+              v-if="baQuestions.length > 0 && !isStreaming && !useManualInput"
+              :questions="baQuestions"
+              :disabled="isStreaming"
+              @submit="handleBAQuestionAnswers"
+              @skip="useManualInput = true"
+            />
 
-            <!-- Manual handoff button (always show after at least one BA message) -->
-            <div v-if="sessions.ba.messages.length >= 2 && !isStreaming" class="manual-handoff">
-              <button class="btn btn-primary" @click="showBAConfirmation = true">
-                ✓ Ready to proceed to System Analyst
-              </button>
-            </div>
+            <!-- Manual input mode (fallback) -->
+            <UserPrompt
+              v-else-if="!isStreaming && baQuestions.length === 0"
+              placeholder="พิมพ์คำตอบของคุณที่นี่..."
+              hint="กด Cmd/Ctrl+Enter เพื่อส่ง"
+              button-text="ส่ง"
+              :disabled="isStreaming"
+              @send="handleBAMessage"
+            />
 
-            <div v-if="showBAConfirmation" class="confirmation-box glass">
-              <h3>✓ Requirements Summary Complete</h3>
-              <p class="text-secondary">The BA has finalized the requirements. Ready to hand off to System Analyst?</p>
-              <div class="actions">
-                <button class="btn btn-secondary" @click="continueBA">Continue Discussion</button>
-                <button class="btn btn-primary" @click="handoffToSA">Proceed to SA</button>
-              </div>
+            <!-- Auto-proceed indicator -->
+            <div v-if="isStreaming" class="processing-indicator">
+              <div class="spinner"></div>
+              <span>กำลังประมวลผล...</span>
             </div>
           </div>
         </div>
@@ -148,8 +154,64 @@ const { sessions, currentAgent, addMessage, setAgentStatus, activateAgent } = us
 const { sendMessage, isStreaming } = useAIStream();
 const { readFileAsText, readFileAsBase64 } = useFileHandler();
 
-const showBAConfirmation = ref(false);
 const isValidating = ref(false);
+const useManualInput = ref(false);
+const showBAConfirmation = ref(false); // Keep for continueBA compatibility
+
+// Parse questions from BA's last message
+const baQuestions = computed(() => {
+  const baMessages = sessions.value.ba.messages;
+  if (baMessages.length === 0) return [];
+
+  // Get the last assistant message
+  const lastAssistantMsg = [...baMessages].reverse().find(m => m.role === 'assistant');
+  if (!lastAssistantMsg?.content) return [];
+
+  const content = lastAssistantMsg.content;
+  const questions: string[] = [];
+  const lines = content.split('\n');
+
+  // Strategy: Find all lines that end with ? (question mark)
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    // Skip empty lines or very short lines
+    if (line.length < 5) continue;
+
+    // Skip lines that look like options (ตัวเลือก A:, Option A:, A., B., etc.)
+    if (/^(ตัวเลือก\s*)?[A-Za-z][\.:]/i.test(line)) continue;
+
+    // Check if line ends with ? or contains question indicators
+    if (line.endsWith('?')) {
+      // Clean up the question - remove numbering/bullets at start
+      let cleanQuestion = line.replace(/^[\d\.\)\-\•\*\s]+/, '').trim();
+      // Also remove bold markers **
+      cleanQuestion = cleanQuestion.replace(/\*\*/g, '');
+      if (cleanQuestion.length > 10) {
+        questions.push(cleanQuestion);
+      }
+    }
+  }
+
+  // Fallback: Pattern for numbered questions without ? (1. xxx:, 2. xxx:)
+  if (questions.length === 0) {
+    const numberedPattern = /(?:^|\n)\s*(\d+)[.)]\s*\*?\*?([^:\n]+)[:：]/g;
+    let match;
+    while ((match = numberedPattern.exec(content)) !== null) {
+      const q = match[2].trim().replace(/\*\*/g, '');
+      if (q.length > 5) {
+        questions.push(q + '?');
+      }
+    }
+  }
+
+  // Reset manual input mode when new questions detected
+  if (questions.length > 0) {
+    useManualInput.value = false;
+  }
+
+  return questions;
+});
 
 // Helper: Extract latest HTML code from messages
 function extractLatestCode(messages: Message[]): string {
@@ -213,7 +275,7 @@ async function startBAConversation() {
 
   try {
     // BA starts by analyzing the user story
-    await sendMessage('ba', 'Please analyze this user story and ask any clarifying questions you need.', context.value.userStory);
+    await sendMessage('ba', 'วิเคราะห์ User Story ของ ผู้ใช้งานและถามคำถามเพื่อความชัดเจนหากจำเป็น.', context.value.userStory);
   } catch (error) {
     console.error('Error starting BA conversation:', error);
     setAgentStatus('ba', 'error');
@@ -221,22 +283,48 @@ async function startBAConversation() {
 }
 
 async function handleBAMessage(message: string) {
+  useManualInput.value = false; // Reset after sending
   try {
     const response = await sendMessage('ba', message);
-
-    // Auto-detect if BA is ready to summarize (check for keywords in English and Thai)
-    const lowerResponse = response.toLowerCase();
-    const isReady = lowerResponse.includes('summary') ||
-      lowerResponse.includes('finalized') ||
-      lowerResponse.includes('สรุป') ||  // Thai: summarize
-      lowerResponse.includes('ครบถ้วน') || // Thai: complete/comprehensive
-      lowerResponse.includes('พร้อม'); // Thai: ready
-
-    if (isReady) {
-      showBAConfirmation.value = true;
-    }
+    await checkIfBAReadyAndProceed(response);
   } catch (error) {
     console.error('Error sending BA message:', error);
+  }
+}
+
+async function handleBAQuestionAnswers(formattedAnswers: string) {
+  useManualInput.value = false;
+  try {
+    const response = await sendMessage('ba', formattedAnswers);
+    await checkIfBAReadyAndProceed(response);
+  } catch (error) {
+    console.error('Error sending BA answers:', error);
+  }
+}
+
+async function checkIfBAReadyAndProceed(response: string) {
+  // Auto-detect if BA is ready (no more questions, has summary)
+  const lowerResponse = response.toLowerCase();
+
+  // Check if BA has provided a summary/conclusion
+  const hasSummary = lowerResponse.includes('summary') ||
+    lowerResponse.includes('finalized') ||
+    lowerResponse.includes('สรุป') ||  // Thai: summarize
+    lowerResponse.includes('ครบถ้วน') || // Thai: complete/comprehensive
+    lowerResponse.includes('ข้อสรุป') || // Thai: conclusion
+    lowerResponse.includes('รายละเอียด requirement');
+
+  // Check if BA still has questions
+  const hasQuestions = response.includes('?') ||
+    lowerResponse.includes('คำถาม') ||
+    lowerResponse.includes('ต้องการทราบ') ||
+    lowerResponse.includes('ช่วยอธิบาย');
+
+  // Auto proceed if BA has summary and no more questions
+  if (hasSummary && !hasQuestions) {
+    // Short delay to let user see the summary before proceeding
+    await new Promise(resolve => setTimeout(resolve, 1500));
+    await handoffToSA();
   }
 }
 
@@ -259,42 +347,44 @@ async function handoffToSA() {
   setAgentStatus('sa', 'processing');
 
   try {
-    // SA starts designing
-    const saResponse = await sendMessage('sa', 'Please design the system architecture and create a prototype HTML.', baSummary);
+    // SA creates UI/UX specification (no HTML)
+    const saMessage = `นี่คือเอกสารจากสรุป User Story จาก BA's. ให้ดำเนินการออกแบบ UI/UX Specification สำหรับ Prototype:\n\n${baSummary}`;
+    const saResponse = await sendMessage('sa', saMessage);
 
-    // Extract HTML from SA response (look for HTML in code blocks)
-    const htmlMatch = saResponse.match(/```html\n([\s\S]*?)\n```/);
-    if (htmlMatch) {
-      const html = htmlMatch[1];
-      updateContext({ saDocument: saResponse, htmlPrototype: html });
-      setAgentStatus('sa', 'complete');
+    // SA doesn't generate HTML anymore, just save the spec
+    updateContext({ saDocument: saResponse });
+    setAgentStatus('sa', 'complete');
 
-      // Move to DEV
-      proceedToDev(saResponse, html);
-    }
+    // Move to DEV with SA's specification
+    proceedToDev(saResponse);
   } catch (error) {
     console.error('Error in SA process:', error);
     setAgentStatus('sa', 'error');
   }
 }
 
-async function proceedToDev(saDocument: string, html: string) {
+async function proceedToDev(saDocument: string) {
   setStep('dev-implementation');
   activateAgent('dev');
   setAgentStatus('dev', 'processing');
 
   try {
-    const devResponse = await sendMessage('dev', 'Please refine and improve this prototype.', saDocument);
+    // DEV creates the HTML prototype based on SA's specification
+    const devMessage = `จากเอกสาร SA's UI/UX Specification. ดำเนินการพัฒนา HTML prototype:\n\n${saDocument}`;
+    const devResponse = await sendMessage('dev', devMessage);
 
     // Extract HTML from DEV response
     const htmlMatch = devResponse.match(/```html\n([\s\S]*?)\n```/);
     if (htmlMatch) {
-      const refinedHtml = htmlMatch[1];
-      updateContext({ htmlPrototype: refinedHtml });
+      const html = htmlMatch[1];
+      updateContext({ htmlPrototype: html });
       setAgentStatus('dev', 'complete');
 
       // Validate the HTML
-      await runValidation(refinedHtml);
+      await runValidation(html);
+    } else {
+      console.error('DEV did not return HTML');
+      setAgentStatus('dev', 'error');
     }
   } catch (error) {
     console.error('Error in DEV process:', error);
@@ -591,17 +681,26 @@ async function handleDevIteration(message: string) {
   justify-content: flex-end;
 }
 
-.manual-handoff {
-  margin-top: 24px;
+.processing-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   padding: 20px;
-  background: rgba(80, 200, 120, 0.05);
-  border: 1px solid rgba(80, 200, 120, 0.3);
+  margin-top: 20px;
+  background: rgba(160, 80, 255, 0.05);
+  border: 1px solid rgba(160, 80, 255, 0.2);
   border-radius: 12px;
-  text-align: center;
+  color: var(--text-secondary);
+  font-size: 14px;
 }
 
-.manual-handoff .btn {
-  font-size: 16px;
-  padding: 14px 28px;
+.processing-indicator .spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
 }
 </style>
