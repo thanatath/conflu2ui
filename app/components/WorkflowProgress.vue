@@ -60,19 +60,18 @@ function isStepCompleted(stepId: string): boolean {
 
 <style scoped>
 .workflow-progress {
-    padding: 24px;
-    margin-bottom: 32px;
+    padding: 20px;
 }
 
 .progress-header {
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 24px;
+    flex-direction: column;
+    gap: 12px;
+    margin-bottom: 20px;
 }
 
 .progress-header h3 {
-    font-size: 20px;
+    font-size: 18px;
     margin: 0;
     background: linear-gradient(135deg, var(--primary), var(--accent));
     -webkit-background-clip: text;
@@ -81,30 +80,29 @@ function isStepCompleted(stepId: string): boolean {
 }
 
 .current-step-badge {
-    padding: 8px 16px;
+    padding: 8px 12px;
     background: linear-gradient(135deg, var(--primary), var(--accent));
-    border-radius: 20px;
-    font-size: 14px;
+    border-radius: 8px;
+    font-size: 12px;
     font-weight: 600;
     color: white;
+    text-align: center;
 }
 
 .steps-container {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 16px;
-    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 
 .step-item {
     position: relative;
     display: flex;
-    flex-direction: column;
     align-items: center;
-    text-align: center;
-    padding: 16px;
+    gap: 12px;
+    padding: 10px 12px;
     background: rgba(255, 255, 255, 0.02);
-    border-radius: 12px;
+    border-radius: 10px;
     transition: all 0.3s ease;
     opacity: 0.5;
 }
@@ -117,7 +115,7 @@ function isStepCompleted(stepId: string): boolean {
     opacity: 1;
     background: rgba(160, 80, 255, 0.1);
     border: 1px solid var(--primary);
-    box-shadow: 0 0 20px rgba(160, 80, 255, 0.3);
+    box-shadow: 0 0 15px rgba(160, 80, 255, 0.3);
     animation: pulse-glow 2s ease-in-out infinite;
 }
 
@@ -126,8 +124,9 @@ function isStepCompleted(stepId: string): boolean {
 }
 
 .step-number {
-    width: 48px;
-    height: 48px;
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
     border-radius: 50%;
     background: var(--bg-card);
     border: 2px solid var(--border-color);
@@ -135,8 +134,7 @@ function isStepCompleted(stepId: string): boolean {
     align-items: center;
     justify-content: center;
     font-weight: 700;
-    font-size: 18px;
-    margin-bottom: 12px;
+    font-size: 14px;
     transition: all 0.3s ease;
 }
 
@@ -154,24 +152,59 @@ function isStepCompleted(stepId: string): boolean {
 }
 
 .step-info {
-    width: 100%;
+    flex: 1;
+    min-width: 0;
 }
 
 .step-title {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 600;
-    margin-bottom: 4px;
     color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .step-description {
-    font-size: 12px;
+    font-size: 11px;
     color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
-@media (max-width: 768px) {
+.step-connector {
+    display: none;
+}
+
+/* Responsive: When stacked (on mobile), use same vertical layout */
+@media (max-width: 1024px) {
+    .workflow-progress {
+        margin-bottom: 24px;
+    }
+
+    .progress-header {
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: center;
+    }
+
     .steps-container {
-        grid-template-columns: 1fr;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .step-item {
+        flex: 0 0 auto;
+        min-width: 140px;
+        flex-direction: column;
+        text-align: center;
+        padding: 12px;
+    }
+
+    .step-info {
+        text-align: center;
     }
 }
 </style>

@@ -138,17 +138,17 @@ function getCodeBlockIcon(language: string): string {
 <style scoped>
 .message-stream {
   width: 100%;
-  max-width: 1000px;
+  max-width: 900px;
   margin: 0 auto;
-  padding: 20px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
 }
 
 .message {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: flex-start;
   animation: slide-in-up 0.3s ease-out;
 }
@@ -158,14 +158,14 @@ function getCodeBlockIcon(language: string): string {
 }
 
 .avatar {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--primary), var(--accent));
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 20px;
+  font-size: 14px;
   flex-shrink: 0;
 }
 
@@ -174,8 +174,8 @@ function getCodeBlockIcon(language: string): string {
 }
 
 .message-content {
-  max-width: 70%;
-  padding: 16px 20px;
+  max-width: 85%;
+  padding: 12px 16px;
   position: relative;
 }
 
@@ -187,23 +187,23 @@ function getCodeBlockIcon(language: string): string {
 .thinking-badge {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
+  gap: 6px;
+  padding: 3px 10px;
   background: rgba(160, 80, 255, 0.2);
-  border-radius: 6px;
-  font-size: 12px;
+  border-radius: 4px;
+  font-size: 11px;
   color: var(--primary-light);
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .thinking-dots {
   display: flex;
-  gap: 4px;
+  gap: 3px;
 }
 
 .thinking-dots span {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   background: var(--primary);
   border-radius: 50%;
   animation: bounce 1.4s ease-in-out infinite;
@@ -218,75 +218,199 @@ function getCodeBlockIcon(language: string): string {
 }
 
 @keyframes bounce {
-
   0%,
   60%,
   100% {
     transform: translateY(0);
   }
-
   30% {
-    transform: translateY(-8px);
+    transform: translateY(-6px);
   }
 }
 
 .content-text {
   color: var(--text-primary);
-  line-height: 1.6;
-  word-wrap: break-word;
-}
-
-.content-text :deep(code) {
-  background: rgba(0, 0, 0, 0.3);
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-family: 'Monaco', 'Consolas', monospace;
   font-size: 14px;
+  line-height: 1.7;
+  word-wrap: break-word;
+  letter-spacing: 0.01em;
 }
 
+/* Paragraphs */
+.content-text :deep(p) {
+  margin: 0 0 0.75em 0;
+}
+
+.content-text :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+/* Headings */
+.content-text :deep(h1) {
+  font-size: 1.4em;
+  font-weight: 600;
+  margin: 1em 0 0.5em 0;
+  color: var(--text-primary);
+}
+
+.content-text :deep(h2) {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin: 0.9em 0 0.4em 0;
+  color: var(--text-primary);
+}
+
+.content-text :deep(h3) {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 0.8em 0 0.4em 0;
+  color: var(--text-primary);
+}
+
+.content-text :deep(h4),
+.content-text :deep(h5),
+.content-text :deep(h6) {
+  font-size: 1em;
+  font-weight: 600;
+  margin: 0.7em 0 0.3em 0;
+  color: var(--text-secondary);
+}
+
+/* Inline code */
+.content-text :deep(code) {
+  background: rgba(0, 0, 0, 0.35);
+  padding: 2px 5px;
+  border-radius: 4px;
+  font-family: 'Monaco', 'Consolas', 'SF Mono', monospace;
+  font-size: 0.85em;
+  color: #e2b6ff;
+}
+
+/* Code blocks */
 .content-text :deep(pre) {
-  background: rgba(0, 0, 0, 0.4);
-  padding: 16px;
-  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.45);
+  padding: 12px 14px;
+  border-radius: 6px;
   overflow-x: auto;
-  margin: 12px 0;
+  margin: 10px 0;
+  border-left: 3px solid var(--primary);
 }
 
 .content-text :deep(pre code) {
   background: none;
   padding: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #e2e8f0;
 }
 
+/* Lists */
 .content-text :deep(ul),
 .content-text :deep(ol) {
-  margin-left: 20px;
-  margin-bottom: 12px;
+  margin: 0.5em 0 0.75em 0;
+  padding-left: 1.5em;
 }
 
+.content-text :deep(li) {
+  margin-bottom: 0.3em;
+  line-height: 1.6;
+}
+
+.content-text :deep(li:last-child) {
+  margin-bottom: 0;
+}
+
+/* Nested lists */
+.content-text :deep(ul ul),
+.content-text :deep(ol ol),
+.content-text :deep(ul ol),
+.content-text :deep(ol ul) {
+  margin: 0.3em 0 0.3em 0;
+}
+
+/* Blockquote */
+.content-text :deep(blockquote) {
+  margin: 0.75em 0;
+  padding: 8px 12px;
+  border-left: 3px solid var(--primary-light);
+  background: rgba(160, 80, 255, 0.08);
+  border-radius: 0 6px 6px 0;
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+/* Links */
 .content-text :deep(a) {
   color: var(--primary-light);
   text-decoration: none;
+  border-bottom: 1px dotted var(--primary-light);
+  transition: all 0.2s ease;
 }
 
 .content-text :deep(a:hover) {
-  text-decoration: underline;
+  color: var(--secondary);
+  border-bottom-color: var(--secondary);
+}
+
+/* Strong and emphasis */
+.content-text :deep(strong) {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.content-text :deep(em) {
+  font-style: italic;
+  color: var(--text-secondary);
+}
+
+/* Horizontal rule */
+.content-text :deep(hr) {
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border-color), transparent);
+  margin: 1em 0;
+}
+
+/* Tables */
+.content-text :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.75em 0;
+  font-size: 0.9em;
+}
+
+.content-text :deep(th),
+.content-text :deep(td) {
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  text-align: left;
+}
+
+.content-text :deep(th) {
+  background: rgba(160, 80, 255, 0.15);
+  font-weight: 600;
+}
+
+.content-text :deep(tr:nth-child(even)) {
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .timestamp {
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-muted);
-  margin-top: 8px;
+  margin-top: 6px;
   text-align: right;
+  opacity: 0.7;
 }
 
 .typing-indicator {
   display: flex;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
 }
 
 .typing-content {
-  padding: 16px 20px;
+  padding: 12px 16px;
   display: flex;
   align-items: center;
   justify-content: center;

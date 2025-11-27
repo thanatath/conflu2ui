@@ -8,13 +8,14 @@
     </header>
 
     <main class="main-content">
-      <!-- Workflow Progress (Always visible) -->
-      <section class="workflow-section">
-        <WorkflowProgress :current-step="currentStep" />
-      </section>
+      <div class="two-column-layout">
+        <!-- Left Column: Workflow Progress (Always visible) -->
+        <aside class="workflow-sidebar">
+          <WorkflowProgress :current-step="currentStep" />
+        </aside>
 
-      <!-- Workflow Steps -->
-      <section class="workflow-section">
+        <!-- Right Column: Current Step Content -->
+        <section class="step-content">
         <!-- Step 1: Upload User Story -->
         <div v-if="currentStep === 'upload-story'" class="step-container animate-slide-in-up">
           <FileUpload title="Upload User Story" description="Upload your user story document (markdown or text file)"
@@ -62,23 +63,33 @@
 
         <!-- Step 4: SA Design -->
         <div v-else-if="currentStep === 'sa-design'" class="step-container animate-slide-in-up">
-          <div class="conversation-container glass">
-            <h2>System Analyst Design</h2>
-            <p class="text-secondary">The SA is designing the architecture and creating your prototype.</p>
-
-            <MessageStream :messages="sessions.sa.messages" :is-streaming="isStreaming && currentAgent === 'sa'"
-              agent-role="sa" />
+          <div class="agent-workspace">
+            <div class="chat-panel glass">
+              <h2>System Analyst Design</h2>
+              <p class="text-secondary">The SA is designing the architecture and creating your prototype.</p>
+              <MessageStream :messages="getMessagesWithoutCode(sessions.sa.messages)"
+                :is-streaming="isStreaming && currentAgent === 'sa'" agent-role="sa" />
+            </div>
+            <div class="code-panel">
+              <LiveCodePreview :code="extractLatestCode(sessions.sa.messages)"
+                :is-streaming="isStreaming && currentAgent === 'sa'" />
+            </div>
           </div>
         </div>
 
         <!-- Step 5: DEV Implementation -->
         <div v-else-if="currentStep === 'dev-implementation'" class="step-container animate-slide-in-up">
-          <div class="conversation-container glass">
-            <h2>Developer Implementation</h2>
-            <p class="text-secondary">The developer is refining and implementing the prototype.</p>
-
-            <MessageStream :messages="sessions.dev.messages" :is-streaming="isStreaming && currentAgent === 'dev'"
-              agent-role="dev" />
+          <div class="agent-workspace">
+            <div class="chat-panel glass">
+              <h2>Developer Implementation</h2>
+              <p class="text-secondary">The developer is refining and implementing the prototype.</p>
+              <MessageStream :messages="getMessagesWithoutCode(sessions.dev.messages)"
+                :is-streaming="isStreaming && currentAgent === 'dev'" agent-role="dev" />
+            </div>
+            <div class="code-panel">
+              <LiveCodePreview :code="extractLatestCode(sessions.dev.messages)"
+                :is-streaming="isStreaming && currentAgent === 'dev'" />
+            </div>
           </div>
         </div>
 
@@ -123,12 +134,15 @@
             </div>
           </div>
         </div>
-      </section>
+        </section>
+      </div>
     </main>
   </div>
 </template>
 
 <script setup lang="ts">
+import type { Message } from './types/workflow';
+
 const { currentStep, context, updateContext, uploadUserStory, uploadImages, handoffToSA: workflowHandoffToSA, handoffToDev, validatePrototype, setStep } = useWorkflow();
 const { sessions, currentAgent, addMessage, setAgentStatus, activateAgent } = useAgentChat();
 const { sendMessage, isStreaming } = useAIStream();
@@ -136,6 +150,33 @@ const { readFileAsText, readFileAsBase64 } = useFileHandler();
 
 const showBAConfirmation = ref(false);
 const isValidating = ref(false);
+
+// Helper: Extract latest HTML code from messages
+function extractLatestCode(messages: Message[]): string {
+  // Look for the latest HTML code block in assistant messages (reverse order)
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const msg = messages[i];
+    if (msg.role === 'assistant' && msg.content) {
+      const htmlMatch = msg.content.match(/```html\n([\s\S]*?)(?:\n```|$)/);
+      if (htmlMatch) {
+        return htmlMatch[1];
+      }
+    }
+  }
+  return '';
+}
+
+// Helper: Get messages with code blocks removed for cleaner chat display
+function getMessagesWithoutCode(messages: Message[]): Message[] {
+  return messages.map(msg => {
+    if (msg.role === 'assistant' && msg.content) {
+      // Remove HTML code blocks from content
+      const cleanContent = msg.content.replace(/```html\n[\s\S]*?(?:\n```|$)/g, '\n\n*[Code displayed in the panel on the right]*\n\n');
+      return { ...msg, content: cleanContent.trim() };
+    }
+    return msg;
+  });
+}
 
 // Step 1: Handle User Story Upload
 async function handleUserStoryUpload(files: File[]) {
@@ -361,21 +402,77 @@ async function handleDevIteration(message: string) {
 }
 
 .main-content {
-  max-width: 1400px;
+  max-width: 1600px;
   margin: 0 auto;
   padding: 0 20px;
 }
 
-.timeline-section {
-  margin-bottom: 40px;
+.two-column-layout {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  gap: 32px;
+  align-items: start;
 }
 
-.workflow-section {
+.workflow-sidebar {
+  position: sticky;
+  top: 20px;
+}
+
+.step-content {
   min-height: 400px;
 }
 
 .step-container {
   width: 100%;
+}
+
+/* Agent workspace: 2-column layout for SA/DEV */
+.agent-workspace {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  min-height: 500px;
+}
+
+.chat-panel {
+  padding: 24px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-panel h2 {
+  font-size: 24px;
+  margin-bottom: 8px;
+}
+
+.chat-panel > p {
+  margin-bottom: 16px;
+}
+
+.code-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Responsive: Stack on smaller screens */
+@media (max-width: 1024px) {
+  .two-column-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-sidebar {
+    position: static;
+  }
+
+  .agent-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .code-panel {
+    order: -1;
+  }
 }
 
 .conversation-container {
