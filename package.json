@@ -7,7 +7,8 @@
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
-    "postinstall": "nuxt prepare"
+    "postinstall": "nuxt prepare",
+    "deploy": "npx nuxi build --preset=cloudflare_pages && npx wrangler pages deploy dist"
   },
   "dependencies": {
     "@vue/repl": "^4.7.0",
