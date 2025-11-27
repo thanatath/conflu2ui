@@ -77,7 +77,7 @@
                 :is-streaming="isStreaming && currentAgent === 'sa'" agent-role="sa" />
             </div>
             <div class="code-panel">
-              <LiveCodePreview :code="extractLatestCode(sessions.sa.messages)"
+              <VueReplPreview :code="extractLatestCode(sessions.sa.messages)"
                 :is-streaming="isStreaming && currentAgent === 'sa'" />
             </div>
           </div>
@@ -93,8 +93,12 @@
                 :is-streaming="isStreaming && currentAgent === 'dev'" agent-role="dev" />
             </div>
             <div class="code-panel">
-              <LiveCodePreview :code="extractLatestCode(sessions.dev.messages)"
-                :is-streaming="isStreaming && currentAgent === 'dev'" />
+              <VueReplPreview
+                :code="extractLatestCode(sessions.dev.messages)"
+                :is-streaming="isStreaming && currentAgent === 'dev'"
+                :auto-fix-on-error="true"
+                @fix-errors="handleReplErrors"
+              />
             </div>
           </div>
         </div>
@@ -128,10 +132,15 @@
           <div class="preview-section">
             <div class="preview-header glass">
               <h2>Prototype Preview</h2>
-              <p class="text-secondary">Your interactive prototype is ready! Test it below.</p>
+              <p class="text-secondary">Your interactive prototype is ready! Edit code directly in the REPL.</p>
             </div>
 
-            <PreviewContainer :html-content="context.htmlPrototype" />
+            <div class="repl-preview-container">
+              <VueReplPreview
+                :code="context.htmlPrototype"
+                @fix-errors="handleReplErrors"
+              />
+            </div>
 
             <div class="iteration-box glass">
               <h3>Want to make changes?</h3>
@@ -158,7 +167,7 @@ const isValidating = ref(false);
 const useManualInput = ref(false);
 const showBAConfirmation = ref(false); // Keep for continueBA compatibility
 
-// Parse questions from BA's last message
+// Parse questions from BA's last message using <!Q!>...<!Q!> format
 const baQuestions = computed(() => {
   const baMessages = sessions.value.ba.messages;
   if (baMessages.length === 0) return [];
@@ -169,39 +178,14 @@ const baQuestions = computed(() => {
 
   const content = lastAssistantMsg.content;
   const questions: string[] = [];
-  const lines = content.split('\n');
 
-  // Strategy: Find all lines that end with ? (question mark)
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-
-    // Skip empty lines or very short lines
-    if (line.length < 5) continue;
-
-    // Skip lines that look like options (ตัวเลือก A:, Option A:, A., B., etc.)
-    if (/^(ตัวเลือก\s*)?[A-Za-z][\.:]/i.test(line)) continue;
-
-    // Check if line ends with ? or contains question indicators
-    if (line.endsWith('?')) {
-      // Clean up the question - remove numbering/bullets at start
-      let cleanQuestion = line.replace(/^[\d\.\)\-\•\*\s]+/, '').trim();
-      // Also remove bold markers **
-      cleanQuestion = cleanQuestion.replace(/\*\*/g, '');
-      if (cleanQuestion.length > 10) {
-        questions.push(cleanQuestion);
-      }
-    }
-  }
-
-  // Fallback: Pattern for numbered questions without ? (1. xxx:, 2. xxx:)
-  if (questions.length === 0) {
-    const numberedPattern = /(?:^|\n)\s*(\d+)[.)]\s*\*?\*?([^:\n]+)[:：]/g;
-    let match;
-    while ((match = numberedPattern.exec(content)) !== null) {
-      const q = match[2].trim().replace(/\*\*/g, '');
-      if (q.length > 5) {
-        questions.push(q + '?');
-      }
+  // Primary strategy: Find all questions wrapped in <!Q!>...<!Q!> tags
+  const questionTagPattern = /<!Q!>([\s\S]*?)<!Q!>/g;
+  let match;
+  while ((match = questionTagPattern.exec(content)) !== null) {
+    const q = match[1].trim();
+    if (q.length > 5) {
+      questions.push(q);
     }
   }
 
@@ -213,12 +197,19 @@ const baQuestions = computed(() => {
   return questions;
 });
 
-// Helper: Extract latest HTML code from messages
+// Helper: Extract latest Vue SFC or HTML code from messages
 function extractLatestCode(messages: Message[]): string {
-  // Look for the latest HTML code block in assistant messages (reverse order)
+  // Look for the latest code block in assistant messages (reverse order)
+  // Try Vue SFC first, then fall back to HTML
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i];
     if (msg.role === 'assistant' && msg.content) {
+      // Try Vue SFC first
+      const vueMatch = msg.content.match(/```vue\n([\s\S]*?)(?:\n```|$)/);
+      if (vueMatch) {
+        return vueMatch[1];
+      }
+      // Fall back to HTML
       const htmlMatch = msg.content.match(/```html\n([\s\S]*?)(?:\n```|$)/);
       if (htmlMatch) {
         return htmlMatch[1];
@@ -232,8 +223,10 @@ function extractLatestCode(messages: Message[]): string {
 function getMessagesWithoutCode(messages: Message[]): Message[] {
   return messages.map(msg => {
     if (msg.role === 'assistant' && msg.content) {
-      // Remove HTML code blocks from content
-      const cleanContent = msg.content.replace(/```html\n[\s\S]*?(?:\n```|$)/g, '\n\n*[Code displayed in the panel on the right]*\n\n');
+      // Remove Vue SFC and HTML code blocks from content
+      let cleanContent = msg.content
+        .replace(/```vue\n[\s\S]*?(?:\n```|$)/g, '\n\n*[Vue SFC code displayed in the REPL on the right]*\n\n')
+        .replace(/```html\n[\s\S]*?(?:\n```|$)/g, '\n\n*[Code displayed in the panel on the right]*\n\n');
       return { ...msg, content: cleanContent.trim() };
     }
     return msg;
@@ -303,25 +296,10 @@ async function handleBAQuestionAnswers(formattedAnswers: string) {
 }
 
 async function checkIfBAReadyAndProceed(response: string) {
-  // Auto-detect if BA is ready (no more questions, has summary)
-  const lowerResponse = response.toLowerCase();
+  // Check if BA has explicitly signaled handoff with <!HANDOFF!> tag
+  const hasHandoffTag = response.includes('<!HANDOFF!>');
 
-  // Check if BA has provided a summary/conclusion
-  const hasSummary = lowerResponse.includes('summary') ||
-    lowerResponse.includes('finalized') ||
-    lowerResponse.includes('สรุป') ||  // Thai: summarize
-    lowerResponse.includes('ครบถ้วน') || // Thai: complete/comprehensive
-    lowerResponse.includes('ข้อสรุป') || // Thai: conclusion
-    lowerResponse.includes('รายละเอียด requirement');
-
-  // Check if BA still has questions
-  const hasQuestions = response.includes('?') ||
-    lowerResponse.includes('คำถาม') ||
-    lowerResponse.includes('ต้องการทราบ') ||
-    lowerResponse.includes('ช่วยอธิบาย');
-
-  // Auto proceed if BA has summary and no more questions
-  if (hasSummary && !hasQuestions) {
+  if (hasHandoffTag) {
     // Short delay to let user see the summary before proceeding
     await new Promise(resolve => setTimeout(resolve, 1500));
     await handoffToSA();
@@ -369,21 +347,21 @@ async function proceedToDev(saDocument: string) {
   setAgentStatus('dev', 'processing');
 
   try {
-    // DEV creates the HTML prototype based on SA's specification
-    const devMessage = `จากเอกสาร SA's UI/UX Specification. ดำเนินการพัฒนา HTML prototype:\n\n${saDocument}`;
+    // DEV creates the Vue SFC prototype based on SA's specification
+    const devMessage = `จากเอกสาร SA's UI/UX Specification. ดำเนินการพัฒนา Vue SFC prototype (App.vue):\n\n${saDocument}`;
     const devResponse = await sendMessage('dev', devMessage);
 
-    // Extract HTML from DEV response
-    const htmlMatch = devResponse.match(/```html\n([\s\S]*?)\n```/);
-    if (htmlMatch) {
-      const html = htmlMatch[1];
-      updateContext({ htmlPrototype: html });
+    // Extract Vue SFC from DEV response (try vue first, then html for backward compat)
+    const vueMatch = devResponse.match(/```vue\n([\s\S]*?)\n```/) || devResponse.match(/```html\n([\s\S]*?)\n```/);
+    if (vueMatch) {
+      const code = vueMatch[1];
+      updateContext({ htmlPrototype: code });
       setAgentStatus('dev', 'complete');
 
-      // Validate the HTML
-      await runValidation(html);
+      // Skip traditional validation for Vue SFC - REPL will handle errors
+      setStep('preview');
     } else {
-      console.error('DEV did not return HTML');
+      console.error('DEV did not return Vue SFC');
       setAgentStatus('dev', 'error');
     }
   } catch (error) {
@@ -422,22 +400,45 @@ async function fixValidationErrors() {
   setStep('dev-implementation');
   setAgentStatus('dev', 'processing');
 
-  const errorMessage = `The HTML has validation errors:\n${context.value.validationErrors.map(e => `- ${e.message}`).join('\n')}\n\nPlease fix these issues and provide the corrected HTML.`;
+  const errorMessage = `The Vue SFC has validation errors:\n${context.value.validationErrors.map(e => `- ${e.message}`).join('\n')}\n\nPlease fix these issues and provide the corrected Vue SFC.`;
 
   try {
     const devResponse = await sendMessage('dev', errorMessage);
 
-    const htmlMatch = devResponse.match(/```html\n([\s\S]*?)\n```/);
-    if (htmlMatch) {
-      const fixedHtml = htmlMatch[1];
-      updateContext({ htmlPrototype: fixedHtml });
+    const vueMatch = devResponse.match(/```vue\n([\s\S]*?)\n```/) || devResponse.match(/```html\n([\s\S]*?)\n```/);
+    if (vueMatch) {
+      const fixedCode = vueMatch[1];
+      updateContext({ htmlPrototype: fixedCode });
       setAgentStatus('dev', 'complete');
-
-      // Re-validate
-      await runValidation(fixedHtml);
+      setStep('preview');
     }
   } catch (error) {
     console.error('Error fixing validation:', error);
+    setAgentStatus('dev', 'error');
+  }
+}
+
+// Handle REPL compilation errors - auto-fix by sending to DEV
+async function handleReplErrors(payload: { code: string; errors: string[] }) {
+  if (isStreaming.value) return; // Don't interrupt if already streaming
+
+  setStep('dev-implementation');
+  setAgentStatus('dev', 'processing');
+
+  const errorMessage = `โค้ด Vue SFC มี compilation errors จาก REPL:\n\n**Errors:**\n${payload.errors.map(e => `- ${e}`).join('\n')}\n\n**Current Code:**\n\`\`\`vue\n${payload.code}\n\`\`\`\n\nกรุณาแก้ไข errors เหล่านี้และส่งโค้ดที่ถูกต้องกลับมา`;
+
+  try {
+    const devResponse = await sendMessage('dev', errorMessage);
+
+    const vueMatch = devResponse.match(/```vue\n([\s\S]*?)\n```/) || devResponse.match(/```html\n([\s\S]*?)\n```/);
+    if (vueMatch) {
+      const fixedCode = vueMatch[1];
+      updateContext({ htmlPrototype: fixedCode });
+      setAgentStatus('dev', 'complete');
+      setStep('preview');
+    }
+  } catch (error) {
+    console.error('Error fixing REPL errors:', error);
     setAgentStatus('dev', 'error');
   }
 }
@@ -449,19 +450,12 @@ async function handleDevIteration(message: string) {
   try {
     const devResponse = await sendMessage('dev', message);
 
-    const htmlMatch = devResponse.match(/```html\n([\s\S]*?)\n```/);
-    if (htmlMatch) {
-      const updatedHtml = htmlMatch[1];
-      updateContext({ htmlPrototype: updatedHtml });
+    const vueMatch = devResponse.match(/```vue\n([\s\S]*?)\n```/) || devResponse.match(/```html\n([\s\S]*?)\n```/);
+    if (vueMatch) {
+      const updatedCode = vueMatch[1];
+      updateContext({ htmlPrototype: updatedCode });
       setAgentStatus('dev', 'complete');
-
-      // Re-validate and return to preview
-      const isValid = await validatePrototype(updatedHtml);
-      if (isValid) {
-        setStep('preview');
-      } else {
-        await fixValidationErrors();
-      }
+      setStep('preview');
     }
   } catch (error) {
     console.error('Error in DEV iteration:', error);
@@ -661,6 +655,11 @@ async function handleDevIteration(message: string) {
 .preview-header h2 {
   font-size: 36px;
   margin-bottom: 8px;
+}
+
+.repl-preview-container {
+  min-height: 600px;
+  margin-bottom: 24px;
 }
 
 .iteration-box {

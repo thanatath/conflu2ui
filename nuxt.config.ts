@@ -5,6 +5,12 @@ export default defineNuxtConfig({
 
   css: ['@/assets/css/main.css'],
 
+  nitro: {
+    prerender: {
+      autoSubfolderIndex: false
+    }
+  },
+
   ssr: true,
 
   runtimeConfig: {
@@ -22,5 +28,15 @@ export default defineNuxtConfig({
   typescript: {
     strict: true,
     typeCheck: false
+  },
+
+  build: {
+    transpile: ['@vue/repl']
+  },
+
+  vite: {
+    optimizeDeps: {
+      exclude: ['@vue/repl']
+    }
   }
 })
