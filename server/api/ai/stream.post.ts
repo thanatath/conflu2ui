@@ -1,14 +1,15 @@
 import { streamAIResponse, AIProviderError } from '../../utils/aiProvider';
 import { getSystemPrompt, createContextMessage } from '../../utils/prompts';
-import type { AIMessage, AgentContext } from '../../types/agents';
+import type { AIMessage, AITextContent, AIImageContent } from '../../types/agents';
 
 export default defineEventHandler(async (event) => {
     try {
         const body = await readBody(event);
-        const { role, messages, contextDocument, model, temperature } = body as {
+        const { role, messages, contextDocument, referenceImages, model, temperature } = body as {
             role: 'ba' | 'sa' | 'dev';
             messages: AIMessage[];
             contextDocument?: string;
+            referenceImages?: string[];
             model?: string;
             temperature?: number;
         };
@@ -36,14 +37,38 @@ export default defineEventHandler(async (event) => {
             { role: 'system', content: fullSystemPrompt },
         ];
 
-        // Add conversation history
-        fullMessages.push(...messages);
+        // Add conversation history, attaching images to the first user message
+        let imagesAttached = false;
+        for (const msg of messages) {
+            if (msg.role === 'user' && !imagesAttached && referenceImages && referenceImages.length > 0) {
+                // Convert first user message to multimodal format with images
+                const textContent: AITextContent = {
+                    type: 'text',
+                    text: typeof msg.content === 'string' ? msg.content : (msg.content as AITextContent[]).map(c => c.type === 'text' ? c.text : '').join(''),
+                };
+                const imageContents: AIImageContent[] = referenceImages.map(img => ({
+                    type: 'image_url' as const,
+                    image_url: {
+                        url: img,
+                        detail: 'auto' as const,
+                    },
+                }));
+                fullMessages.push({
+                    role: 'user',
+                    content: [textContent, ...imageContents],
+                });
+                imagesAttached = true;
+            } else {
+                fullMessages.push(msg);
+            }
+        }
 
-        // Debug: Log the payload being sent
+        // Debug: Log the payload being sent (truncate image data)
         console.log('[AI API] Sending payload:', {
             model: model || useRuntimeConfig().aiProviderModel,
             messageCount: fullMessages.length,
-            messages: fullMessages,
+            hasImages: referenceImages && referenceImages.length > 0,
+            imageCount: referenceImages?.length || 0,
         });
 
         // Set response headers for SSE

@@ -1,5 +1,9 @@
 <template>
-  <div class="app-container">
+  <!-- Full page preview mode (separate route) -->
+  <NuxtPage v-if="isPreviewRoute" />
+
+  <!-- Main application -->
+  <div v-else class="app-container">
     <header class="app-header">
       <div class="header-content">
         <h1 class="gradient-text">Conflu2UI</h1>
@@ -214,6 +218,10 @@
 <script setup lang="ts">
 import type { Message } from './types/workflow';
 
+// Route handling for preview page
+const route = useRoute();
+const isPreviewRoute = computed(() => route.path === '/preview');
+
 const { currentStep, context, updateContext, uploadUserStory, uploadImages, handoffToSA: workflowHandoffToSA, handoffToDev, validatePrototype, setStep } = useWorkflow();
 const { sessions, currentAgent, addMessage, setAgentStatus, activateAgent } = useAgentChat();
 const { sendMessage, isStreaming, lastError, clearError } = useAIStream();
@@ -402,8 +410,8 @@ async function startBAConversation() {
   lastAction.value = { type: 'ba-start', payload: {} };
 
   try {
-    // BA starts by analyzing the user story
-    await sendMessage('ba', 'วิเคราะห์ User Story ของ ผู้ใช้งานและถามคำถามเพื่อความชัดเจนหากจำเป็น.', context.value.userStory);
+    // BA starts by analyzing the user story (with reference images if available)
+    await sendMessage('ba', 'วิเคราะห์ User Story ของ ผู้ใช้งานและถามคำถามเพื่อความชัดเจนหากจำเป็น.', context.value.userStory, context.value.images);
     lastAction.value = null; // Clear on success
   } catch (error) {
     console.error('Error starting BA conversation:', error);
@@ -416,7 +424,7 @@ async function handleBAMessage(message: string) {
   isEditingBA.value = false; // Reset editing mode
   lastAction.value = { type: 'ba-message', payload: { message } };
   try {
-    await sendMessage('ba', message);
+    await sendMessage('ba', message, undefined, context.value.images);
     // No auto-handoff - user must confirm summary
     lastAction.value = null;
   } catch (error) {
@@ -428,7 +436,7 @@ async function handleBAQuestionAnswers(formattedAnswers: string) {
   useManualInput.value = false;
   lastAction.value = { type: 'ba-answers', payload: { formattedAnswers } };
   try {
-    await sendMessage('ba', formattedAnswers);
+    await sendMessage('ba', formattedAnswers, undefined, context.value.images);
     // No auto-handoff - user must confirm summary
     lastAction.value = null;
   } catch (error) {
@@ -445,7 +453,7 @@ async function handleRequestBASummary(partialAnswers: string) {
       ? `${partialAnswers}\n\n---\n**คำสั่ง:** สำหรับคำถามที่ไม่ได้รับคำตอบ ให้คุณตัดสินใจตามความเหมาะสมโดยใช้หลักการ Best Practice กรุณาสรุป Requirements ทั้งหมดโดยใช้แท็ก <!SUMMARY!>`
       : 'กรุณาสรุป Requirements ทั้งหมดที่ได้รับจนถึงตอนนี้ โดยใช้แท็ก <!SUMMARY!>';
 
-    await sendMessage('ba', summaryRequest);
+    await sendMessage('ba', summaryRequest, undefined, context.value.images);
     // Summary will be shown via baSummary computed property
   } catch (error) {
     console.error('Error requesting BA summary:', error);
@@ -468,7 +476,7 @@ ${feedback}
 
 กรุณาทำความเข้าใจ feedback นี้ หากมีคำถามเพิ่มเติมให้ใช้แท็ก <!Q!> หากเข้าใจชัดเจนแล้วให้สร้างบทสรุปใหม่โดยใช้แท็ก <!SUMMARY!>`;
 
-    await sendMessage('ba', editMessage);
+    await sendMessage('ba', editMessage, undefined, context.value.images);
     isEditingBA.value = false;
   } catch (error) {
     console.error('Error handling BA edit request:', error);
@@ -495,9 +503,9 @@ async function handoffToSA() {
   setAgentStatus('sa', 'processing');
 
   try {
-    // SA creates UI/UX specification (no HTML)
+    // SA creates UI/UX specification (no HTML) - with reference images
     const saMessage = `นี่คือเอกสารสรุป Requirements จาก BA ที่ผู้ใช้ยืนยันแล้ว ให้ดำเนินการออกแบบ UI/UX Specification สำหรับ Prototype:\n\n${cleanedSummary}`;
-    const saResponse = await sendMessage('sa', saMessage);
+    const saResponse = await sendMessage('sa', saMessage, undefined, context.value.images);
 
     // SA doesn't generate HTML anymore, just save the spec
     updateContext({ saDocument: saResponse });
@@ -519,9 +527,9 @@ async function proceedToDev(saDocument: string) {
   lastAction.value = { type: 'dev-process', payload: { saDocument } };
 
   try {
-    // DEV creates the Vue SFC prototype based on SA's specification
+    // DEV creates the Vue SFC prototype based on SA's specification - with reference images
     const devMessage = `จากเอกสาร SA's UI/UX Specification. ดำเนินการพัฒนา Vue SFC prototype (App.vue):\n\n${saDocument}`;
-    const devResponse = await sendMessage('dev', devMessage);
+    const devResponse = await sendMessage('dev', devMessage, undefined, context.value.images);
 
     // Extract Vue SFC from DEV response (try vue first, then html for backward compat)
     const vueMatch = devResponse.match(/```vue\n([\s\S]*?)\n```/) || devResponse.match(/```html\n([\s\S]*?)\n```/);
@@ -576,7 +584,7 @@ async function fixValidationErrors() {
   const errorMessage = `The Vue SFC has validation errors:\n${context.value.validationErrors.map(e => `- ${e.message}`).join('\n')}\n\nPlease fix these issues and provide the corrected Vue SFC.`;
 
   try {
-    const devResponse = await sendMessage('dev', errorMessage);
+    const devResponse = await sendMessage('dev', errorMessage, undefined, context.value.images);
 
     const vueMatch = devResponse.match(/```vue\n([\s\S]*?)\n```/) || devResponse.match(/```html\n([\s\S]*?)\n```/);
     if (vueMatch) {
@@ -601,47 +609,39 @@ async function handleReplErrors(payload: { code: string; errors: string[] }) {
   setStep('dev-implementation');
   setAgentStatus('dev', 'processing');
 
-  // Categorize errors into compilation (syntax) and runtime errors
-  const compilationErrors = payload.errors.filter(e =>
-    e.includes('Invalid') || e.includes('Unexpected') || e.includes('Expected') ||
-    e.includes('Unterminated') || e.includes('SyntaxError') || e.match(/\(\d+:\d+\)/)
-  );
-  const runtimeErrors = payload.errors.filter(e =>
-    e.includes('Cannot') || e.includes('undefined') || e.includes('TypeError') ||
-    e.includes('ReferenceError') || e.includes('is not defined') || e.includes('is not a function')
-  );
-  const otherErrors = payload.errors.filter(e =>
-    !compilationErrors.includes(e) && !runtimeErrors.includes(e)
-  );
+  // Build structured error message with SPECIFIC fix instructions
+  // Note: Using string concatenation to avoid Vue parser issues with script tags in template literals
+  const scriptTag = '<scr' + 'ipt setup>';
+  const scriptCloseTag = '</scr' + 'ipt>';
 
-  // Build error message with categories
-  let errorDetails = '';
-  if (compilationErrors.length > 0) {
-    errorDetails += `**Syntax/Compilation Errors:**\n${compilationErrors.map(e => `- ${e}`).join('\n')}\n\n`;
-  }
-  if (runtimeErrors.length > 0) {
-    errorDetails += `**Runtime Errors:**\n${runtimeErrors.map(e => `- ${e}`).join('\n')}\n\n`;
-  }
-  if (otherErrors.length > 0) {
-    errorDetails += `**Other Errors:**\n${otherErrors.map(e => `- ${e}`).join('\n')}\n\n`;
-  }
+  const errorMessage = `🚨 COMPILE ERROR - โค้ดมี syntax errors ต้องแก้ไข
 
-  const errorMessage = `โค้ด Vue SFC มี errors จาก REPL Preview ที่ต้องแก้ไข:\n\n${errorDetails}**Current Code:**\n\`\`\`vue\n${payload.code}\n\`\`\`\n\nกรุณาแก้ไข errors ทั้งหมดและส่งโค้ดที่ถูกต้องกลับมา โดยเฉพาะตรวจสอบ:\n- Syntax errors: ตรวจสอบ tag ปิด/เปิดให้ถูกต้อง, ไม่มี tag ที่ไม่ถูกต้อง\n- การประกาศ variables และ functions ก่อนใช้งาน\n- การ import components และ dependencies ที่จำเป็น\n- การเข้าถึง properties ของ objects ที่อาจเป็น undefined\n- ตรวจสอบว่า template, script, และ style sections ถูกต้อง`;
+## Errors Found:
+${payload.errors.map(e => `- ${e}`).join('\n')}
+
+## Quick Fix Guide:
+1. **"Invalid end tag"** = มี tag ปิดไม่ครบ เช่น ต้องมี closing tag ครบ
+2. **"Unexpected token"** = syntax ผิด เช่น ลืมปิด " หรือมี < ค้าง
+3. **"Attribute name cannot contain"** = ลืม class= เช่น <p class="text-gray">
+4. **"Cannot set properties of undefined"** = ต้อง init formData ด้วย reactive({...})
+5. **:style binding** = ใช้ \`:style="{ width: value + '%' }"\` ไม่ใช้ \${}
+
+## Current Broken Code:
+\`\`\`vue
+${payload.code}
+\`\`\`
+
+กรุณาแก้ไขโค้ดและส่งกลับมาในรูปแบบ \`\`\`vue ... \`\`\` เท่านั้น`;
 
   try {
-    const devResponse = await sendMessage('dev', errorMessage);
+    const devResponse = await sendMessage('dev', errorMessage, undefined, context.value.images);
 
     const vueMatch = devResponse.match(/```vue\n([\s\S]*?)\n```/) || devResponse.match(/```html\n([\s\S]*?)\n```/);
     if (vueMatch) {
       const fixedCode = vueMatch[1];
       updateContext({ htmlPrototype: fixedCode });
       setAgentStatus('dev', 'complete');
-      // Stay on dev-implementation step - VueReplPreview will auto-check for errors
-      // If there are still errors, it will emit 'fix-errors' again and loop back here
-      // If no errors, user can manually proceed or we stay on dev-implementation showing success
       console.log('[App] Dev returned fixed code, waiting for VueReplPreview to validate...');
-      // Don't change step - let VueReplPreview validate first
-      // The component will show "Ready" status if no errors
     }
   } catch (error) {
     console.error('Error fixing REPL errors:', error);
@@ -664,7 +664,7 @@ async function handleDevIteration(message: string) {
   setAgentStatus('dev', 'processing');
 
   try {
-    const devResponse = await sendMessage('dev', message);
+    const devResponse = await sendMessage('dev', message, undefined, context.value.images);
 
     const vueMatch = devResponse.match(/```vue\n([\s\S]*?)\n```/) || devResponse.match(/```html\n([\s\S]*?)\n```/);
     if (vueMatch) {

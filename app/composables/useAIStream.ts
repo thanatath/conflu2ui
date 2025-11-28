@@ -49,7 +49,8 @@ export function useAIStream() {
     async function performStreamRequest(
         role: AgentRole,
         session: ReturnType<typeof useAgentChat>['getSession'] extends (r: AgentRole) => infer T ? T : never,
-        contextDocument?: string
+        contextDocument?: string,
+        referenceImages?: string[]
     ): Promise<string> {
         // Get conversation history properly:
         // 1. First, remove the last message (empty assistant placeholder we just added)
@@ -67,6 +68,7 @@ export function useAIStream() {
                 role,
                 messages: conversationHistory,
                 contextDocument: contextDocument || session.context,
+                referenceImages: referenceImages || [],
                 // model will use default from server config
             }),
         });
@@ -135,7 +137,8 @@ export function useAIStream() {
     async function sendMessage(
         role: AgentRole,
         message: string,
-        contextDocument?: string
+        contextDocument?: string,
+        referenceImages?: string[]
     ): Promise<string> {
         const { addMessage, getSession, setAgentStatus, removeLastMessage } = useAgentChat();
 
@@ -167,7 +170,7 @@ export function useAIStream() {
             // Retry loop for empty responses
             while (attempt <= EMPTY_RESPONSE_RETRY_CONFIG.maxRetries) {
                 try {
-                    fullContent = await performStreamRequest(role, session, contextDocument);
+                    fullContent = await performStreamRequest(role, session, contextDocument, referenceImages);
 
                     // Check if response is empty or blank
                     if (fullContent && fullContent.trim() !== '') {

@@ -21,6 +21,13 @@
         >
           🔧 Auto Fix
         </button>
+        <NuxtLink
+          v-if="isReadyForPreview && !isStreaming && !hasErrors"
+          to="/preview"
+          class="fullpage-preview-btn"
+        >
+          🖥️ Full Preview
+        </NuxtLink>
         <span v-if="lineCount > 0" class="code-lines">{{ lineCount }} lines</span>
       </div>
     </div>
@@ -52,7 +59,7 @@
           :preview-options="{
             headHTML: tailwindCDN,
             showRuntimeError: true,
-            showRuntimeWarning: true
+            showRuntimeWarning: false
           }"
           :auto-resize="true"
         />
@@ -100,8 +107,16 @@ const runtimeErrors = ref<string[]>([]); // Runtime errors from preview
 const dismissedErrors = ref(false);
 const hasTriggeredAutoFix = ref(false); // Prevent multiple auto-fix triggers
 
-// Combine compilation and runtime errors
-const allErrors = computed(() => [...currentErrors.value.map(formatError), ...runtimeErrors.value]);
+// Track if preview is ready (no errors, not streaming, has code)
+const isReadyForPreview = ref(false);
+
+// Combine compilation and runtime errors (filter out warnings)
+const allErrors = computed(() => {
+  const compilationErrors = currentErrors.value.map(formatError);
+  const allMessages = [...compilationErrors, ...runtimeErrors.value];
+  // Filter out warnings - only keep actual errors
+  return filterErrors(allMessages);
+});
 const hasErrors = computed(() => allErrors.value.length > 0 && !dismissedErrors.value);
 const errorCount = computed(() => allErrors.value.length);
 
@@ -109,6 +124,34 @@ const errorCount = computed(() => allErrors.value.length);
 function formatError(error: string | Error): string {
   if (typeof error === 'string') return error;
   return error.message || String(error);
+}
+
+// Check if a message is a warning (not an error)
+function isWarning(message: string): boolean {
+  const lowerMessage = message.toLowerCase();
+  // Common warning patterns that should be ignored
+  const warningPatterns = [
+    'warning',
+    'warn',
+    'deprecated',
+    'experimental',
+    'is defined but never used',
+    'was accessed during render but is not defined',
+    'missing required prop',
+    'invalid prop',
+    'extraneous non-props attributes',
+    'extraneous non-emits event',
+    'component is missing template',
+    'failed to resolve component',
+    'runtime directive used on component',
+    '[vue warn]',
+  ];
+  return warningPatterns.some(pattern => lowerMessage.includes(pattern));
+}
+
+// Filter out warnings from errors
+function filterErrors(errors: string[]): string[] {
+  return errors.filter(err => !isWarning(err));
 }
 
 // Dismiss errors temporarily
@@ -260,6 +303,9 @@ onUnmounted(() => {
   stopErrorPolling();
 });
 
+// Import sanitizer for auto-fixing common AI-generated errors
+import { sanitizeVueSfc } from '~/utils/vueSfcSanitizer';
+
 // Convert HTML to Vue SFC format
 function htmlToVueSFC(html: string): string {
   // If it's already a Vue SFC (has <template> or <script>), return as is
@@ -300,9 +346,16 @@ ${styleClose}`;
 // Update REPL with new code
 function updateReplCode(code: string) {
   if (!replStore.value || !code) return;
-  
-  const sfcCode = htmlToVueSFC(code);
-  
+
+  // First, try to sanitize common AI-generated errors
+  const { code: sanitizedCode, fixes } = sanitizeVueSfc(code);
+
+  if (fixes.length > 0) {
+    console.log('[VueReplPreview] Auto-sanitized code, fixes applied:', fixes);
+  }
+
+  const sfcCode = htmlToVueSFC(sanitizedCode);
+
   // Update the App.vue file in the store
   replStore.value.setFiles({
     'App.vue': sfcCode,
@@ -334,9 +387,10 @@ function checkAndTriggerAutoFix() {
           errors: allErrors.value
         });
       } else if (allErrors.value.length === 0 && !hasEmittedReady) {
-        // No errors - emit ready event
+        // No errors - emit ready event and mark ready for preview
         console.log('[VueReplPreview] Code compiled successfully, emitting ready');
         hasEmittedReady = true;
+        isReadyForPreview.value = true;
         emit('ready');
       }
     }
@@ -355,6 +409,7 @@ watch(() => props.code, (newCode, oldCode) => {
     if (newCode !== oldCode) {
       hasTriggeredAutoFix.value = false;
       hasEmittedReady = false; // Reset ready flag for new code
+      isReadyForPreview.value = false; // Reset preview ready flag for new code
       // Check for errors after code update (for auto-fix loop)
       if (!props.isStreaming && props.autoFixOnError) {
         checkAndTriggerAutoFix();
@@ -489,6 +544,27 @@ defineExpose({ getCurrentCode });
 .fix-errors-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 2px 8px rgba(255, 82, 82, 0.4);
+}
+
+.fullpage-preview-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #10b981, #059669);
+  border: none;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: white;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.fullpage-preview-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.4);
 }
 
 .error-panel {
