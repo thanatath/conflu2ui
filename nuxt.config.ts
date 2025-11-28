@@ -18,6 +18,7 @@ export default defineNuxtConfig({
     aiProviderApiUrl: process.env.AI_PROVIDER_API_URL || 'https://api.z.ai/api/paas/v4/chat/completions',
     aiProviderApiToken: process.env.AI_PROVIDER_API_TOKEN || '',
     aiProviderModel: process.env.AI_PROVIDER_MODEL || 'GLM-4.6',
+    aiProviderProxyUrl: process.env.AI_PROVIDER_PROXY_URL || '', // Optional: http://user:pass@proxy:port
 
     // Public keys (exposed to client)
     public: {
