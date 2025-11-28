@@ -1,4 +1,4 @@
-import { streamAIResponse } from '../../utils/aiProvider';
+import { streamAIResponse, AIProviderError } from '../../utils/aiProvider';
 import { getSystemPrompt, createContextMessage } from '../../utils/prompts';
 import type { AIMessage, AgentContext } from '../../types/agents';
 
@@ -71,10 +71,30 @@ export default defineEventHandler(async (event) => {
                         }
                     }
                 } catch (error) {
-                    const errorData = `data: ${JSON.stringify({
+                    // Enhanced error handling for retry-related errors
+                    let errorPayload: {
+                        error: string;
+                        code?: string;
+                        retriesAttempted?: number;
+                        isRetryError?: boolean;
+                        done: boolean;
+                    } = {
                         error: error instanceof Error ? error.message : 'Unknown error',
                         done: true,
-                    })}\n\n`;
+                    };
+
+                    if (error instanceof AIProviderError) {
+                        errorPayload = {
+                            error: error.message,
+                            code: error.code,
+                            retriesAttempted: error.retriesAttempted,
+                            isRetryError: true,
+                            done: true,
+                        };
+                        console.error('[AI API] Retry exhausted error:', errorPayload);
+                    }
+
+                    const errorData = `data: ${JSON.stringify(errorPayload)}\n\n`;
                     controller.enqueue(new TextEncoder().encode(errorData));
                     controller.close();
                 }

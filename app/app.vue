@@ -153,6 +153,13 @@
         </section>
       </div>
     </main>
+
+    <!-- AI Error Toast -->
+    <AIErrorToast
+      :error="lastError"
+      @dismiss="handleErrorDismiss"
+      @retry="handleErrorRetry"
+    />
   </div>
 </template>
 
@@ -161,8 +168,11 @@ import type { Message } from './types/workflow';
 
 const { currentStep, context, updateContext, uploadUserStory, uploadImages, handoffToSA: workflowHandoffToSA, handoffToDev, validatePrototype, setStep } = useWorkflow();
 const { sessions, currentAgent, addMessage, setAgentStatus, activateAgent } = useAgentChat();
-const { sendMessage, isStreaming } = useAIStream();
+const { sendMessage, isStreaming, lastError, clearError } = useAIStream();
 const { readFileAsText, readFileAsBase64 } = useFileHandler();
+
+// Track last action for retry
+const lastAction = ref<{ type: string; payload: any } | null>(null);
 
 const isValidating = ref(false);
 const useManualInput = ref(false);
@@ -261,15 +271,51 @@ function skipImages() {
   startBAConversation();
 }
 
+// Error handling
+function handleErrorDismiss() {
+  clearError();
+  lastAction.value = null;
+}
+
+async function handleErrorRetry() {
+  clearError();
+  if (!lastAction.value) return;
+
+  const { type, payload } = lastAction.value;
+  try {
+    switch (type) {
+      case 'ba-start':
+        await startBAConversation();
+        break;
+      case 'ba-message':
+        await handleBAMessage(payload.message);
+        break;
+      case 'ba-answers':
+        await handleBAQuestionAnswers(payload.formattedAnswers);
+        break;
+      case 'sa-process':
+        await handoffToSA();
+        break;
+      case 'dev-process':
+        await proceedToDev(payload.saDocument);
+        break;
+    }
+  } catch (error) {
+    console.error('Retry failed:', error);
+  }
+}
+
 // Step 3: BA Conversation
 async function startBAConversation() {
   setStep('ba-conversation');
   activateAgent('ba');
   setAgentStatus('ba', 'processing');
+  lastAction.value = { type: 'ba-start', payload: {} };
 
   try {
     // BA starts by analyzing the user story
     await sendMessage('ba', 'วิเคราะห์ User Story ของ ผู้ใช้งานและถามคำถามเพื่อความชัดเจนหากจำเป็น.', context.value.userStory);
+    lastAction.value = null; // Clear on success
   } catch (error) {
     console.error('Error starting BA conversation:', error);
     setAgentStatus('ba', 'error');
@@ -278,6 +324,7 @@ async function startBAConversation() {
 
 async function handleBAMessage(message: string) {
   useManualInput.value = false; // Reset after sending
+  lastAction.value = { type: 'ba-message', payload: { message } };
   try {
     const response = await sendMessage('ba', message);
     await checkIfBAReadyAndProceed(response);
@@ -288,9 +335,11 @@ async function handleBAMessage(message: string) {
 
 async function handleBAQuestionAnswers(formattedAnswers: string) {
   useManualInput.value = false;
+  lastAction.value = { type: 'ba-answers', payload: { formattedAnswers } };
   try {
     const response = await sendMessage('ba', formattedAnswers);
     await checkIfBAReadyAndProceed(response);
+    lastAction.value = null;
   } catch (error) {
     console.error('Error sending BA answers:', error);
   }
@@ -384,6 +433,7 @@ function continueBA() {
 
 async function handoffToSA() {
   showBAConfirmation.value = false;
+  lastAction.value = { type: 'sa-process', payload: {} };
 
   // Get BA's last message as the summary
   const baMessages = sessions.value.ba.messages;
@@ -404,6 +454,7 @@ async function handoffToSA() {
     // SA doesn't generate HTML anymore, just save the spec
     updateContext({ saDocument: saResponse });
     setAgentStatus('sa', 'complete');
+    lastAction.value = null;
 
     // Move to DEV with SA's specification
     proceedToDev(saResponse);
@@ -417,6 +468,7 @@ async function proceedToDev(saDocument: string) {
   setStep('dev-implementation');
   activateAgent('dev');
   setAgentStatus('dev', 'processing');
+  lastAction.value = { type: 'dev-process', payload: { saDocument } };
 
   try {
     // DEV creates the Vue SFC prototype based on SA's specification
@@ -429,6 +481,7 @@ async function proceedToDev(saDocument: string) {
       const code = vueMatch[1];
       updateContext({ htmlPrototype: code });
       setAgentStatus('dev', 'complete');
+      lastAction.value = null;
 
       // Skip traditional validation for Vue SFC - REPL will handle errors
       setStep('preview');

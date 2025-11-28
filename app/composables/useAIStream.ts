@@ -1,7 +1,42 @@
 import type { AgentRole, Message } from '../types/workflow';
 
+// Error types for retry handling
+export interface AIRetryError {
+    message: string;
+    code: 'TIMEOUT' | 'MAX_RETRIES' | 'API_ERROR' | 'NETWORK_ERROR';
+    retriesAttempted: number;
+    isRetryError: true;
+}
+
+export class AIStreamError extends Error {
+    public readonly code?: string;
+    public readonly retriesAttempted?: number;
+    public readonly isRetryError: boolean;
+
+    constructor(
+        message: string,
+        options?: {
+            code?: string;
+            retriesAttempted?: number;
+            isRetryError?: boolean;
+        }
+    ) {
+        super(message);
+        this.name = 'AIStreamError';
+        this.code = options?.code;
+        this.retriesAttempted = options?.retriesAttempted;
+        this.isRetryError = options?.isRetryError ?? false;
+    }
+}
+
 export function useAIStream() {
     const isStreaming = useState('is-streaming', () => false);
+    const lastError = useState<AIStreamError | null>('ai-stream-error', () => null);
+
+    // Clear error state
+    function clearError() {
+        lastError.value = null;
+    }
 
     async function sendMessage(
         role: AgentRole,
@@ -76,15 +111,25 @@ export function useAIStream() {
                         try {
                             const data = JSON.parse(line.slice(6));
 
+                            // Handle retry-related errors with enhanced info
                             if (data.error) {
-                                throw new Error(data.error);
+                                const streamError = new AIStreamError(data.error, {
+                                    code: data.code,
+                                    retriesAttempted: data.retriesAttempted,
+                                    isRetryError: data.isRetryError,
+                                });
+                                lastError.value = streamError;
+                                throw streamError;
                             }
 
                             if (data.content) {
                                 fullContent += data.content;
                                 // Update the last message
                                 const messages = session.messages;
-                                messages[messages.length - 1].content = fullContent;
+                                const lastMessage = messages[messages.length - 1];
+                                if (lastMessage) {
+                                    lastMessage.content = fullContent;
+                                }
                             }
 
                             if (data.done) {
@@ -102,10 +147,22 @@ export function useAIStream() {
             }
 
             setAgentStatus(role, 'idle');
+            clearError();
             return fullContent;
         } catch (error) {
             setAgentStatus(role, 'error');
             console.error('Stream error:', error);
+
+            // Store error for UI display
+            if (error instanceof AIStreamError) {
+                lastError.value = error;
+            } else {
+                lastError.value = new AIStreamError(
+                    error instanceof Error ? error.message : 'Unknown error occurred',
+                    { isRetryError: false }
+                );
+            }
+
             throw error;
         } finally {
             isStreaming.value = false;
@@ -114,6 +171,8 @@ export function useAIStream() {
 
     return {
         isStreaming,
+        lastError,
         sendMessage,
+        clearError,
     };
 }
