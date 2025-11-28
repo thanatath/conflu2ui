@@ -21,13 +21,13 @@
         >
           🔧 Auto Fix
         </button>
-        <NuxtLink
+        <button
           v-if="isReadyForPreview && !isStreaming && !hasErrors"
-          to="/preview"
           class="fullpage-preview-btn"
+          @click="openFullPreview"
         >
           🖥️ Full Preview
-        </NuxtLink>
+        </button>
         <span v-if="lineCount > 0" class="code-lines">{{ lineCount }} lines</span>
       </div>
     </div>
@@ -174,6 +174,15 @@ const lineCount = computed(() => {
   if (!props.code) return 0;
   return props.code.split('\n').length;
 });
+
+// Open full preview in new window
+function openFullPreview() {
+  // Save code to localStorage for the new window to read
+  if (props.code) {
+    localStorage.setItem('preview-code', props.code);
+  }
+  window.open('/preview', '_blank', 'noopener,noreferrer');
+}
 
 onMounted(async () => {
   // Dynamic import to avoid SSR issues
