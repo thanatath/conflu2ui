@@ -48,16 +48,22 @@ User Input (Story + Images)
          ↓
     BA Agent (Reviews & Clarifies)
          ↓
-    SA Agent (Designs & Creates HTML)
+    BA สรุป Requirements (ใช้แท็ก <!SUMMARY!>)
          ↓
-    DEV Agent (Refines & Implements)
+    User ตรวจสอบบทสรุป ─────────────────┐
+         │                              │
+         │ ยืนยัน                    ต้องการแก้ไข
+         ↓                              │
+    SA Agent (Designs Spec)  ←──────────┘
+         ↓                   (BA ถามคำถามเพิ่มเติมหากจำเป็น
+    DEV Agent (Creates Vue SFC)            แล้วสร้างบทสรุปใหม่)
          ↓
-   HTML Validator (Checks Syntax)
-         ↓
-    Preview (Mobile + Desktop)
+    Preview (Vue REPL)
          ↓
    Iteration (User Feedback Loop)
 ```
+
+**สำคัญ:** BA ไม่สามารถส่งต่องานให้ SA เองได้ - ต้องรอการยืนยันจากผู้ใช้เท่านั้น
 
 ### Directory Structure
 
@@ -106,9 +112,11 @@ conflu2UI/
 #### BA (Business Analyst)
 - **Role**: Review requirements, ask clarifying questions
 - **Context**: User story document
-- **Output**: Requirements summary in markdown
+- **Output**: Requirements summary in markdown (ใช้แท็ก `<!SUMMARY!>`)
+- **Questions**: ถามคำถามด้วยแท็ก `<!Q!>...<!/Q!>`
 - **Session**: Separate chat history
-- **Prompt**: [server/utils/prompts.ts](file:///root/git/conflu2UI/server/utils/prompts.ts#L4-L35)
+- **Prompt**: [server/utils/prompts.ts](file:///root/git/conflu2UI/server/utils/prompts.ts#L4-L51)
+- **สำคัญ**: BA ไม่สามารถ handoff เองได้ - ต้องรอ user ยืนยันบทสรุป
 
 #### SA (System Analyst)
 - **Role**: Design architecture, create HTML prototype
@@ -128,22 +136,27 @@ conflu2UI/
 
 ### 2. Workflow Steps
 
-**9 Steps Total:**
+**Workflow Steps:**
 
 1. **upload-story**: Upload user story (markdown/txt)
 2. **upload-images**: Optional reference images
 3. **ba-conversation**: BA reviews and asks questions
-4. **ba-confirmation**: User confirms requirements (manual button)
-5. **sa-design**: SA designs architecture and HTML
-6. **dev-implementation**: DEV refines HTML
-7. **validation**: Auto HTML validation
-8. **preview**: Mobile + Desktop preview
-9. **iteration**: User requests changes
+   - BA ถามคำถามด้วย `<!Q!>` tags
+   - User ตอบคำถามหรือกดขอให้ BA สรุป
+   - BA สร้างบทสรุปด้วย `<!SUMMARY!>` tag
+   - **User ตรวจสอบและเลือก:**
+     - ✅ ยืนยัน → ส่งต่อให้ SA
+     - ✏️ แก้ไข → BA รับ feedback และถามคำถามเพิ่ม/สร้างบทสรุปใหม่
+4. **sa-design**: SA designs UI/UX specification
+5. **dev-implementation**: DEV creates Vue SFC prototype
+6. **preview**: Vue REPL preview with live editing
+7. **iteration**: User requests changes
 
 **State Management:**
 - Current step: `currentStep` ref in `app.vue`
+- BA Summary: `baSummary` computed ดึงจาก `<!SUMMARY!>` tag
+- BA Questions: `baQuestions` computed ดึงจาก `<!Q!>` tags
 - Context passing: Markdown documents between agents
-- Validation loop: Auto-retry if HTML has errors
 
 ### 3. AI Streaming
 
@@ -621,87 +634,115 @@ async function handleImagesUpload(files: File[]) {
 
 ---
 
-### Step 3-4: BA Conversation
+### Step 3: BA Conversation (with User Confirmation Flow)
 
-**Location:** `app.vue` lines 189-231
+**Location:** `app.vue`
+
+**Flow Overview:**
+```
+BA ถามคำถาม (<!Q!>) → User ตอบ → BA อาจถามเพิ่ม หรือ สรุป (<!SUMMARY!>)
+                                              ↓
+                     User ตรวจสอบบทสรุป ─────────────────┐
+                              │                          │
+                          ยืนยัน ✅                 ต้องการแก้ไข ✏️
+                              ↓                          │
+                         SA Design  ←───── BA loop กลับ ─┘
+```
+
+**Key Functions:**
 
 ```typescript
-async function startBAConversation() {
-  setStep('ba-conversation');
-  activateAgent('ba');
-  
-  // BA analyzes user story
-  await sendMessage('ba', 'Please analyze this user story...', context.userStory);
+// User requests BA summary (bypass questions)
+async function handleRequestBASummary(partialAnswers: string) {
+  const summaryRequest = partialAnswers
+    ? `${partialAnswers}\n\n---\nกรุณาสรุป Requirements โดยใช้แท็ก <!SUMMARY!>`
+    : 'กรุณาสรุป Requirements โดยใช้แท็ก <!SUMMARY!>';
+  await sendMessage('ba', summaryRequest);
 }
 
-async function handleBAMessage(message: string) {
-  const response = await sendMessage('ba', message);
-  
-  // Auto-detect completion keywords (Thai + English)
-  if (response.includes('สรุป') || response.includes('summary')) {
-    showBAConfirmation.value = true;
-  }
+// User confirms summary → proceed to SA
+async function handleBAConfirmAndProceed() {
+  await handoffToSA();
+}
+
+// User wants to edit → BA loops back
+async function handleBAEditRequest(feedback: string) {
+  const editMessage = `ผู้ใช้ต้องการแก้ไข:\n${feedback}\n\nกรุณาถามคำถามเพิ่ม (<!Q!>) หรือสร้างบทสรุปใหม่ (<!SUMMARY!>)`;
+  await sendMessage('ba', editMessage);
 }
 ```
 
-**Manual Handoff:**
-- Button appears after BA's first response
-- User clicks "Ready to proceed to SA"
-- Confirmation box shows
-- User approves → `handoffToSA()`
+**Key Computed Properties:**
+
+```typescript
+// Detect BA summary from <!SUMMARY!> tag
+const baSummary = computed(() => {
+  const lastMsg = sessions.ba.messages.reverse().find(m => m.role === 'assistant');
+  if (lastMsg?.content?.includes('<!SUMMARY!>')) {
+    return lastMsg.content.substring(lastMsg.content.indexOf('<!SUMMARY!>'));
+  }
+  return '';
+});
+
+// Detect BA questions from <!Q!> tags (only if no summary)
+const baQuestions = computed(() => {
+  if (baSummary.value) return []; // Summary takes priority
+  // ... extract <!Q!>...<!Q!> tags
+});
+```
+
+**UI Components:**
+- `BASummaryConfirmation.vue`: แสดงบทสรุปและปุ่มยืนยัน/แก้ไข
+- `BAQuestionForm.vue`: แสดงคำถามจาก BA ให้ user ตอบ
 
 ---
 
-### Step 5: SA Design
+### Step 4: SA Design
 
-**Location:** `app.vue` lines 233-263
+**Location:** `app.vue`
 
 ```typescript
 async function handoffToSA() {
-  // Get BA's summary
-  const baSummary = sessions.ba.messages[messages.length - 1].content;
-  updateContext({ baDocument: baSummary });
-  
+  // Get BA's summary (with <!SUMMARY!> tag cleaned)
+  const baSummaryContent = sessions.ba.messages[messages.length - 1]?.content || '';
+  const cleanedSummary = baSummaryContent.replace(/<!SUMMARY!>/g, '').trim();
+
+  updateContext({ baDocument: cleanedSummary });
+  setAgentStatus('ba', 'complete');
+
   setStep('sa-design');
   activateAgent('sa');
-  
-  // SA designs and creates HTML
-  const saResponse = await sendMessage('sa', 'Please design...', baSummary);
-  
-  // Extract HTML from response
-  const htmlMatch = saResponse.match(/```html\n([\s\S]*?)\n```/);
-  if (htmlMatch) {
-    const html = htmlMatch[1];
-    updateContext({ saDocument: saResponse, htmlPrototype: html });
-    
-    // Move to DEV
-    proceedToDev(saResponse, html);
-  }
+
+  // SA creates UI/UX specification (no code)
+  const saResponse = await sendMessage('sa',
+    `นี่คือเอกสารสรุป Requirements ที่ผู้ใช้ยืนยันแล้ว:\n\n${cleanedSummary}`);
+
+  updateContext({ saDocument: saResponse });
+  proceedToDev(saResponse);
 }
 ```
 
 ---
 
-### Step 6: DEV Implementation
+### Step 5: DEV Implementation
 
-**Location:** `app.vue` lines 265-287
+**Location:** `app.vue`
 
 ```typescript
-async function proceedToDev(saDocument: string, html: string) {
+async function proceedToDev(saDocument: string) {
   setStep('dev-implementation');
   activateAgent('dev');
-  
-  // DEV refines HTML
-  const devResponse = await sendMessage('dev', 'Please refine...', saDocument);
-  
-  // Extract refined HTML
-  const htmlMatch = devResponse.match(/```html\n([\s\S]*?)\n```/);
-  if (htmlMatch) {
-    const refinedHtml = htmlMatch[1];
-    updateContext({ htmlPrototype: refinedHtml });
-    
-    // Validate
-    await runValidation(refinedHtml);
+
+  // DEV creates Vue SFC prototype
+  const devResponse = await sendMessage('dev',
+    `จากเอกสาร SA's UI/UX Specification:\n\n${saDocument}`);
+
+  // Extract Vue SFC from response
+  const vueMatch = devResponse.match(/```vue\n([\s\S]*?)\n```/);
+  if (vueMatch) {
+    const code = vueMatch[1];
+    updateContext({ htmlPrototype: code });
+    setStep('preview'); // Skip validation for Vue SFC
   }
 }
 ```

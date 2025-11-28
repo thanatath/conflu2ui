@@ -43,7 +43,7 @@ export function useAIStream() {
         message: string,
         contextDocument?: string
     ): Promise<string> {
-        const { addMessage, getSession, setAgentStatus } = useAgentChat();
+        const { addMessage, getSession, setAgentStatus, removeLastMessage } = useAgentChat();
 
         // Add user message
         const userMessage: Message = {
@@ -146,10 +146,22 @@ export function useAIStream() {
                 }
             }
 
+            // If no content was received, remove the empty assistant message
+            if (!fullContent) {
+                console.warn('[useAIStream] No content received from AI, removing empty assistant message');
+                removeLastMessage(role);
+                setAgentStatus(role, 'idle');
+                clearError();
+                return '';
+            }
+
             setAgentStatus(role, 'idle');
             clearError();
             return fullContent;
         } catch (error) {
+            // Remove empty assistant message on error to prevent showing empty bubble
+            removeLastMessage(role);
+
             setAgentStatus(role, 'error');
             console.error('Stream error:', error);
 

@@ -28,13 +28,13 @@
     <!-- Error Panel -->
     <div v-if="hasErrors && !isStreaming" class="error-panel">
       <div class="error-header">
-        <span>Compilation Errors</span>
+        <span>{{ runtimeErrors.length > 0 ? 'Runtime Errors' : 'Compilation Errors' }}</span>
         <button class="dismiss-btn" @click="dismissErrors">✕</button>
       </div>
       <div class="error-list">
-        <div v-for="(error, index) in currentErrors" :key="index" class="error-item">
+        <div v-for="(error, index) in allErrors" :key="index" class="error-item">
           <span class="error-icon">❌</span>
-          <span class="error-message">{{ formatError(error) }}</span>
+          <span class="error-message">{{ error }}</span>
         </div>
       </div>
     </div>
@@ -49,7 +49,11 @@
           :show-compile-output="false"
           :show-import-map="false"
           :clear-console="false"
-          :preview-options="{ headHTML: tailwindCDN }"
+          :preview-options="{
+            headHTML: tailwindCDN,
+            showRuntimeError: true,
+            showRuntimeWarning: true
+          }"
           :auto-resize="true"
         />
         <template #fallback>
@@ -68,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, shallowRef, type Component } from 'vue';
+import { ref, computed, watch, onMounted, onUnmounted, shallowRef, type Component } from 'vue';
 
 const props = defineProps<{
   code: string;
@@ -91,11 +95,14 @@ const replStore = shallowRef<any>(null);
 
 // Error handling
 const currentErrors = ref<(string | Error)[]>([]);
+const runtimeErrors = ref<string[]>([]); // Runtime errors from preview
 const dismissedErrors = ref(false);
 const hasTriggeredAutoFix = ref(false); // Prevent multiple auto-fix triggers
 
-const hasErrors = computed(() => currentErrors.value.length > 0 && !dismissedErrors.value);
-const errorCount = computed(() => currentErrors.value.length);
+// Combine compilation and runtime errors
+const allErrors = computed(() => [...currentErrors.value.map(formatError), ...runtimeErrors.value]);
+const hasErrors = computed(() => allErrors.value.length > 0 && !dismissedErrors.value);
+const errorCount = computed(() => allErrors.value.length);
 
 // Format error for display
 function formatError(error: string | Error): string {
@@ -110,11 +117,10 @@ function dismissErrors() {
 
 // Handle fix errors button click
 function handleFixErrors() {
-  if (currentErrors.value.length > 0 && props.code) {
-    const errorMessages = currentErrors.value.map(formatError);
+  if (allErrors.value.length > 0 && props.code) {
     emit('fix-errors', {
       code: props.code,
-      errors: errorMessages
+      errors: allErrors.value
     });
   }
 }
@@ -147,7 +153,7 @@ onMounted(async () => {
     vueVersion,
   });
 
-  // Watch for errors in the store
+  // Watch for errors in the store (compilation errors)
   watch(() => replStore.value?.errors, (errors) => {
     if (errors && errors.length > 0) {
       currentErrors.value = errors;
@@ -163,6 +169,64 @@ onMounted(async () => {
   if (props.code) {
     updateReplCode(props.code);
   }
+});
+
+// Listen for runtime errors from preview iframe via postMessage
+function handleRuntimeMessage(event: MessageEvent) {
+  // Validate message origin (from same origin or sandbox)
+  if (event.data?.type === 'vue-repl-error') {
+    const errorMsg = event.data.message || String(event.data.error);
+    if (errorMsg && !runtimeErrors.value.includes(errorMsg)) {
+      runtimeErrors.value = [...runtimeErrors.value, errorMsg];
+      dismissedErrors.value = false;
+      emit('errors', allErrors.value);
+    }
+  }
+}
+
+// Poll for error messages in the REPL preview (Vue REPL shows errors in .msg.err elements)
+let errorPollingInterval: ReturnType<typeof setInterval> | null = null;
+
+function checkForRuntimeErrors() {
+  // Look for Vue REPL's error message elements
+  const container = document.querySelector('.vue-repl-container');
+  if (!container) return;
+
+  // Vue REPL displays errors in elements with class 'msg err'
+  const errorElements = container.querySelectorAll('.msg.err, .preview .msg');
+
+  errorElements.forEach((el) => {
+    const errorText = el.textContent?.trim();
+    if (errorText && !runtimeErrors.value.includes(errorText)) {
+      runtimeErrors.value = [...runtimeErrors.value, errorText];
+      dismissedErrors.value = false;
+      emit('errors', allErrors.value);
+    }
+  });
+}
+
+function startErrorPolling() {
+  if (errorPollingInterval) return;
+  // Poll every 500ms to detect runtime errors
+  errorPollingInterval = setInterval(checkForRuntimeErrors, 500);
+}
+
+function stopErrorPolling() {
+  if (errorPollingInterval) {
+    clearInterval(errorPollingInterval);
+    errorPollingInterval = null;
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('message', handleRuntimeMessage);
+  // Start polling for errors after REPL is loaded
+  setTimeout(startErrorPolling, 1500);
+});
+
+onUnmounted(() => {
+  window.removeEventListener('message', handleRuntimeMessage);
+  stopErrorPolling();
 });
 
 // Convert HTML to Vue SFC format
@@ -221,6 +285,7 @@ watch(() => props.code, (newCode) => {
     // Reset dismissed errors when new code comes in
     dismissedErrors.value = false;
     hasTriggeredAutoFix.value = false; // Reset auto-fix flag for new code
+    runtimeErrors.value = []; // Reset runtime errors for new code
   }
 }, { immediate: false });
 
@@ -228,17 +293,16 @@ watch(() => props.code, (newCode) => {
 watch(() => props.isStreaming, (isStreaming, wasStreaming) => {
   // Streaming just ended (was true, now false)
   if (wasStreaming && !isStreaming && props.autoFixOnError) {
-    // Wait a bit for REPL to detect errors
+    // Wait a bit for REPL to detect errors (including runtime errors)
     setTimeout(() => {
-      if (currentErrors.value.length > 0 && !hasTriggeredAutoFix.value && props.code) {
+      if (allErrors.value.length > 0 && !hasTriggeredAutoFix.value && props.code) {
         hasTriggeredAutoFix.value = true;
-        const errorMessages = currentErrors.value.map(formatError);
         emit('fix-errors', {
           code: props.code,
-          errors: errorMessages
+          errors: allErrors.value
         });
       }
-    }, 1000); // Give REPL time to compile and detect errors
+    }, 1500); // Give REPL time to compile and detect runtime errors
   }
 }, { immediate: false });
 
@@ -257,8 +321,8 @@ defineExpose({ getCurrentCode });
   border: 1px solid var(--border-color);
   border-radius: 12px;
   overflow: hidden;
-  height: calc(100vh - 200px);
-  min-height: 500px;
+  height: 100%;
+  max-height: 800px;
   display: flex;
   flex-direction: column;
   background: var(--glass-bg);
@@ -421,7 +485,7 @@ defineExpose({ getCurrentCode });
 .repl-content {
   flex: 1;
   min-height: 0;
-  height: 100%;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -429,39 +493,47 @@ defineExpose({ getCurrentCode });
 .repl-content :deep(.vue-repl) {
   flex: 1;
   height: 100% !important;
-  min-height: 450px;
+  max-height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden;
 }
 
 .repl-content :deep(.vue-repl .split-pane) {
   height: 100% !important;
+  max-height: 100% !important;
 }
 
-.repl-content :deep(.vue-repl .output-container),
-.repl-content :deep(.vue-repl .editor-container) {
-  height: 100% !important;
-}
 
 .repl-content :deep(.vue-repl iframe) {
   height: 100% !important;
+  max-height: 100% !important;
 }
 
 .repl-content :deep(.vue-repl .preview-container) {
   height: 100% !important;
+  max-height: 100% !important;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .repl-content :deep(.vue-repl .preview-container .iframe-container) {
   flex: 1;
   height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden;
 }
 
 .repl-content :deep(.vue-repl .right) {
   height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden;
 }
 
 .repl-content :deep(.vue-repl .output) {
   height: 100% !important;
+  max-height: 100% !important;
+  overflow: hidden;
 }
 
 .loading-placeholder {

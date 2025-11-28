@@ -138,12 +138,14 @@ function getCodeBlockIcon(language: string): string {
 <style scoped>
 .message-stream {
   width: 100%;
-  max-width: 900px;
+  max-width: 100%; /* Use full width in dev/sa panels, parent controls max-width */
   margin: 0 auto;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 
 .message {

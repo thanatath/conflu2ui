@@ -5,10 +5,40 @@
         <h1 class="gradient-text">Conflu2UI</h1>
         <p class="text-secondary">Transform User Stories into Interactive Prototypes</p>
       </div>
+      <!-- Tab Navigation -->
+      <nav class="main-tabs">
+        <button
+          class="tab-btn"
+          :class="{ active: activeMainTab === 'workflow' }"
+          @click="activeMainTab = 'workflow'"
+        >
+          <span class="tab-icon">⚙️</span>
+          <span>Workflow</span>
+        </button>
+        <button
+          class="tab-btn"
+          :class="{ active: activeMainTab === 'documents', 'has-documents': hasAnyDocument }"
+          @click="activeMainTab = 'documents'"
+        >
+          <span class="tab-icon">📚</span>
+          <span>Documents Summary</span>
+          <span v-if="documentCount > 0" class="doc-count">{{ documentCount }}</span>
+        </button>
+      </nav>
     </header>
 
     <main class="main-content">
-      <div class="two-column-layout">
+      <!-- Documents Summary Tab -->
+      <div v-if="activeMainTab === 'documents'" class="documents-tab-content animate-slide-in-up">
+        <AgentDocumentsSummary
+          :ba-document="context.baDocument"
+          :sa-document="context.saDocument"
+          :dev-document="context.htmlPrototype"
+        />
+      </div>
+
+      <!-- Workflow Tab -->
+      <div v-else class="two-column-layout">
         <!-- Left Column: Workflow Progress (Always visible) -->
         <aside class="workflow-sidebar">
           <WorkflowProgress :current-step="currentStep" />
@@ -40,25 +70,41 @@
             <MessageStream :messages="sessions.ba.messages" :is-streaming="isStreaming && currentAgent === 'ba'"
               agent-role="ba" />
 
-            <!-- Show question form if BA has questions -->
+            <!-- Show BA Summary for user confirmation -->
+            <BASummaryConfirmation
+              v-if="baSummary && !isStreaming && !isEditingBA"
+              :summary="baSummary"
+              :disabled="isStreaming"
+              @confirm="handleBAConfirmAndProceed"
+              @edit="handleBAEditRequest"
+            />
+
+            <!-- Show question form if BA has questions (and no summary yet) -->
             <BAQuestionForm
-              v-if="baQuestions.length > 0 && !isStreaming && !useManualInput"
+              v-else-if="baQuestions.length > 0 && !isStreaming && !useManualInput && !baSummary"
               :questions="baQuestions"
               :disabled="isStreaming"
               @submit="handleBAQuestionAnswers"
               @skip="useManualInput = true"
-              @skipToSA="handleSkipToSA"
+              @skipToSA="handleRequestBASummary"
             />
 
-            <!-- Manual input mode (fallback) -->
+            <!-- Manual input mode (fallback or when editing) -->
             <UserPrompt
-              v-else-if="!isStreaming && baQuestions.length === 0"
+              v-else-if="!isStreaming && (baQuestions.length === 0 || isEditingBA) && !baSummary"
               placeholder="พิมพ์คำตอบของคุณที่นี่..."
               hint="กด Cmd/Ctrl+Enter เพื่อส่ง"
               button-text="ส่ง"
               :disabled="isStreaming"
               @send="handleBAMessage"
             />
+
+            <!-- Request Summary Button (when no questions and no summary) -->
+            <div v-if="!isStreaming && !baSummary && baQuestions.length === 0 && sessions.ba.messages.length > 1" class="request-summary-section">
+              <button class="btn btn-secondary" @click="handleRequestBASummary('')">
+                🚀 ขอให้ BA สรุป Requirements
+              </button>
+            </div>
 
             <!-- Auto-proceed indicator -->
             <div v-if="isStreaming" class="processing-indicator">
@@ -139,6 +185,7 @@
             <div class="repl-preview-container">
               <VueReplPreview
                 :code="context.htmlPrototype"
+                :auto-fix-on-error="true"
                 @fix-errors="handleReplErrors"
               />
             </div>
@@ -176,7 +223,44 @@ const lastAction = ref<{ type: string; payload: any } | null>(null);
 
 const isValidating = ref(false);
 const useManualInput = ref(false);
-const showBAConfirmation = ref(false); // Keep for continueBA compatibility
+const isEditingBA = ref(false); // Track if user is editing BA summary
+
+// Tab navigation state
+const activeMainTab = ref<'workflow' | 'documents'>('workflow');
+
+// Computed properties for document summary tab
+const hasAnyDocument = computed(() => {
+  return !!(context.value.baDocument || context.value.saDocument || context.value.htmlPrototype);
+});
+
+const documentCount = computed(() => {
+  let count = 0;
+  if (context.value.baDocument) count++;
+  if (context.value.saDocument) count++;
+  if (context.value.htmlPrototype) count++;
+  return count;
+});
+
+// Parse BA summary from last message using <!SUMMARY!> tag
+const baSummary = computed(() => {
+  const baMessages = sessions.value.ba.messages;
+  if (baMessages.length === 0) return '';
+
+  // Get the last assistant message
+  const lastAssistantMsg = [...baMessages].reverse().find(m => m.role === 'assistant');
+  if (!lastAssistantMsg?.content) return '';
+
+  const content = lastAssistantMsg.content;
+
+  // Check if message contains <!SUMMARY!> tag
+  if (content.includes('<!SUMMARY!>')) {
+    // Extract everything after <!SUMMARY!> tag
+    const summaryStart = content.indexOf('<!SUMMARY!>');
+    return content.substring(summaryStart);
+  }
+
+  return '';
+});
 
 // Parse questions from BA's last message using <!Q!>...<!Q!> format
 const baQuestions = computed(() => {
@@ -188,6 +272,10 @@ const baQuestions = computed(() => {
   if (!lastAssistantMsg?.content) return [];
 
   const content = lastAssistantMsg.content;
+
+  // If there's a summary, don't show questions
+  if (content.includes('<!SUMMARY!>')) return [];
+
   const questions: string[] = [];
 
   // Primary strategy: Find all questions wrapped in <!Q!>...<!Q!> tags
@@ -324,10 +412,12 @@ async function startBAConversation() {
 
 async function handleBAMessage(message: string) {
   useManualInput.value = false; // Reset after sending
+  isEditingBA.value = false; // Reset editing mode
   lastAction.value = { type: 'ba-message', payload: { message } };
   try {
-    const response = await sendMessage('ba', message);
-    await checkIfBAReadyAndProceed(response);
+    await sendMessage('ba', message);
+    // No auto-handoff - user must confirm summary
+    lastAction.value = null;
   } catch (error) {
     console.error('Error sending BA message:', error);
   }
@@ -337,109 +427,66 @@ async function handleBAQuestionAnswers(formattedAnswers: string) {
   useManualInput.value = false;
   lastAction.value = { type: 'ba-answers', payload: { formattedAnswers } };
   try {
-    const response = await sendMessage('ba', formattedAnswers);
-    await checkIfBAReadyAndProceed(response);
+    await sendMessage('ba', formattedAnswers);
+    // No auto-handoff - user must confirm summary
     lastAction.value = null;
   } catch (error) {
     console.error('Error sending BA answers:', error);
   }
 }
 
-async function handleSkipToSA(partialAnswers: string) {
+// Request BA to create summary (when user clicks "ส่งงานให้ SA")
+async function handleRequestBASummary(partialAnswers: string) {
   useManualInput.value = false;
   try {
-    // Send partial answers to BA with instruction to decide and summarize
-    const skipMessage = `${partialAnswers}
+    // Send partial answers to BA with instruction to summarize
+    const summaryRequest = partialAnswers
+      ? `${partialAnswers}\n\n---\n**คำสั่ง:** สำหรับคำถามที่ไม่ได้รับคำตอบ ให้คุณตัดสินใจตามความเหมาะสมโดยใช้หลักการ Best Practice กรุณาสรุป Requirements ทั้งหมดโดยใช้แท็ก <!SUMMARY!>`
+      : 'กรุณาสรุป Requirements ทั้งหมดที่ได้รับจนถึงตอนนี้ โดยใช้แท็ก <!SUMMARY!>';
 
----
-**คำสั่งพิเศษ:** ผู้ใช้ต้องการข้ามไปขั้นตอนถัดไปแล้ว
-- สำหรับคำถามที่ไม่ได้รับคำตอบ ให้คุณตัดสินใจตามความเหมาะสมโดยใช้หลักการ Best Practice
-- กรุณาสรุป Requirements ทั้งหมดและส่งต่อให้ SA ทันที
-- จบด้วยแท็ก <!HANDOFF!>`;
-
-    const response = await sendMessage('ba', skipMessage);
-
-    // Force handoff if BA's response is valid (not blank/too short)
-    const trimmedResponse = response?.trim() || '';
-    if (trimmedResponse.length > 50) {
-      // BA gave a meaningful response, proceed to SA
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      await handoffToSA();
-    } else {
-      // BA response too short, might be hallucination - force create summary
-      console.warn('BA response too short, forcing handoff with available context');
-      await forceHandoffToSA();
-    }
+    await sendMessage('ba', summaryRequest);
+    // Summary will be shown via baSummary computed property
   } catch (error) {
-    console.error('Error in skip to SA:', error);
-    // On error, try to force handoff anyway
-    await forceHandoffToSA();
+    console.error('Error requesting BA summary:', error);
   }
 }
 
-async function forceHandoffToSA() {
-  // Get all BA conversation as summary
-  const baMessages = sessions.value.ba.messages;
-  const allBaContent = baMessages
-    .filter(m => m.role === 'assistant' && m.content?.trim())
-    .map(m => m.content)
-    .join('\n\n---\n\n');
+// User confirms BA summary and proceeds to SA
+async function handleBAConfirmAndProceed() {
+  await handoffToSA();
+}
 
-  const userStory = context.value.userStory || '';
-  const fallbackSummary = allBaContent || `User Story:\n${userStory}\n\n(BA analysis was skipped by user)`;
-
-  updateContext({ baDocument: fallbackSummary });
-  setAgentStatus('ba', 'complete');
-
-  setStep('sa-design');
-  activateAgent('sa');
-  setAgentStatus('sa', 'processing');
-
+// User wants to edit BA summary
+async function handleBAEditRequest(feedback: string) {
+  isEditingBA.value = true;
   try {
-    const saMessage = `นี่คือเอกสารจากสรุป User Story จาก BA's. ให้ดำเนินการออกแบบ UI/UX Specification สำหรับ Prototype:\n\n${fallbackSummary}`;
-    const saResponse = await sendMessage('sa', saMessage);
+    const editMessage = `ผู้ใช้ต้องการแก้ไขบทสรุป:
 
-    updateContext({ saDocument: saResponse });
-    setAgentStatus('sa', 'complete');
+**Feedback จากผู้ใช้:**
+${feedback}
 
-    proceedToDev(saResponse);
+กรุณาทำความเข้าใจ feedback นี้ หากมีคำถามเพิ่มเติมให้ใช้แท็ก <!Q!> หากเข้าใจชัดเจนแล้วให้สร้างบทสรุปใหม่โดยใช้แท็ก <!SUMMARY!>`;
+
+    await sendMessage('ba', editMessage);
+    isEditingBA.value = false;
   } catch (error) {
-    console.error('Error in SA process:', error);
-    setAgentStatus('sa', 'error');
+    console.error('Error handling BA edit request:', error);
+    isEditingBA.value = false;
   }
 }
 
-async function checkIfBAReadyAndProceed(response: string) {
-  // Guard against blank/empty AI responses (hallucination prevention)
-  const trimmedResponse = response?.trim() || '';
-  if (trimmedResponse.length < 20) {
-    console.warn('BA response too short, ignoring potential hallucination');
-    return; // Don't proceed with empty/very short responses
-  }
-
-  // Check if BA has explicitly signaled handoff with <!HANDOFF!> tag
-  const hasHandoffTag = response.includes('<!HANDOFF!>');
-
-  if (hasHandoffTag) {
-    // Short delay to let user see the summary before proceeding
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    await handoffToSA();
-  }
-}
-
-function continueBA() {
-  showBAConfirmation.value = false;
-}
-
+// Handoff to SA after user confirmation
 async function handoffToSA() {
-  showBAConfirmation.value = false;
   lastAction.value = { type: 'sa-process', payload: {} };
 
-  // Get BA's last message as the summary
+  // Get BA's last message (summary) as the document
   const baMessages = sessions.value.ba.messages;
-  const baSummary = baMessages[baMessages.length - 1]?.content || '';
+  const baSummaryContent = baMessages[baMessages.length - 1]?.content || '';
 
-  updateContext({ baDocument: baSummary });
+  // Clean up the summary (remove <!SUMMARY!> tag)
+  const cleanedSummary = baSummaryContent.replace(/<!SUMMARY!>/g, '').trim();
+
+  updateContext({ baDocument: cleanedSummary });
   setAgentStatus('ba', 'complete');
 
   setStep('sa-design');
@@ -448,7 +495,7 @@ async function handoffToSA() {
 
   try {
     // SA creates UI/UX specification (no HTML)
-    const saMessage = `นี่คือเอกสารจากสรุป User Story จาก BA's. ให้ดำเนินการออกแบบ UI/UX Specification สำหรับ Prototype:\n\n${baSummary}`;
+    const saMessage = `นี่คือเอกสารสรุป Requirements จาก BA ที่ผู้ใช้ยืนยันแล้ว ให้ดำเนินการออกแบบ UI/UX Specification สำหรับ Prototype:\n\n${cleanedSummary}`;
     const saResponse = await sendMessage('sa', saMessage);
 
     // SA doesn't generate HTML anymore, just save the spec
@@ -543,14 +590,18 @@ async function fixValidationErrors() {
   }
 }
 
-// Handle REPL compilation errors - auto-fix by sending to DEV
+// Handle REPL compilation/runtime errors - auto-fix by sending to DEV
 async function handleReplErrors(payload: { code: string; errors: string[] }) {
   if (isStreaming.value) return; // Don't interrupt if already streaming
 
   setStep('dev-implementation');
   setAgentStatus('dev', 'processing');
 
-  const errorMessage = `โค้ด Vue SFC มี compilation errors จาก REPL:\n\n**Errors:**\n${payload.errors.map(e => `- ${e}`).join('\n')}\n\n**Current Code:**\n\`\`\`vue\n${payload.code}\n\`\`\`\n\nกรุณาแก้ไข errors เหล่านี้และส่งโค้ดที่ถูกต้องกลับมา`;
+  const errorType = payload.errors.some(e =>
+    e.includes('Cannot') || e.includes('undefined') || e.includes('TypeError') || e.includes('ReferenceError')
+  ) ? 'runtime errors' : 'compilation errors';
+
+  const errorMessage = `โค้ด Vue SFC มี ${errorType} จาก REPL Preview:\n\n**Errors:**\n${payload.errors.map(e => `- ${e}`).join('\n')}\n\n**Current Code:**\n\`\`\`vue\n${payload.code}\n\`\`\`\n\nกรุณาแก้ไข errors เหล่านี้และส่งโค้ดที่ถูกต้องกลับมา โดยเฉพาะตรวจสอบ:\n- การประกาศ variables และ functions ก่อนใช้งาน\n- การ import components และ dependencies ที่จำเป็น\n- การเข้าถึง properties ของ objects ที่อาจเป็น undefined`;
 
   try {
     const devResponse = await sendMessage('dev', errorMessage);
@@ -610,6 +661,66 @@ async function handleDevIteration(message: string) {
   font-size: 18px;
 }
 
+/* Tab Navigation */
+.main-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.tab-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(160, 80, 255, 0.3);
+}
+
+.tab-btn.active {
+  background: linear-gradient(135deg, rgba(160, 80, 255, 0.2), rgba(80, 200, 255, 0.1));
+  border-color: var(--primary);
+  color: var(--text-primary);
+  box-shadow: 0 0 20px rgba(160, 80, 255, 0.3);
+}
+
+.tab-btn.has-documents:not(.active) {
+  border-color: rgba(80, 200, 120, 0.3);
+}
+
+.tab-btn .tab-icon {
+  font-size: 18px;
+}
+
+.tab-btn .doc-count {
+  background: var(--success);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 10px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.documents-tab-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
 .main-content {
   max-width: 1600px;
   margin: 0 auto;
@@ -641,7 +752,7 @@ async function handleDevIteration(message: string) {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 24px;
-  min-height: 500px;
+  height: 600px;
 }
 
 .chat-panel {
@@ -649,20 +760,35 @@ async function handleDevIteration(message: string) {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  max-height: 600px;
+  min-width: 0;
 }
 
 .chat-panel h2 {
   font-size: 24px;
   margin-bottom: 8px;
+  flex-shrink: 0;
 }
 
 .chat-panel > p {
   margin-bottom: 16px;
+  flex-shrink: 0;
+}
+
+/* Allow message stream to scroll within chat panel */
+.chat-panel :deep(.message-stream) {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-width: 100%;
+  margin: 0;
 }
 
 .code-panel {
   display: flex;
   flex-direction: column;
+  max-height: 600px;
+  overflow: hidden;
 }
 
 /* Responsive: Stack on smaller screens */
@@ -696,6 +822,14 @@ async function handleDevIteration(message: string) {
 
 .conversation-container>p {
   margin-bottom: 32px;
+}
+
+.request-summary-section {
+  display: flex;
+  justify-content: center;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color);
 }
 
 .confirmation-box {
@@ -783,7 +917,9 @@ async function handleDevIteration(message: string) {
 }
 
 .repl-preview-container {
-  min-height: 600px;
+  height: 800px;
+  max-height: 800px;
+  min-height: 800px;
   margin-bottom: 24px;
 }
 

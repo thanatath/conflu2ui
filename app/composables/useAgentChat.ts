@@ -59,6 +59,13 @@ export function useAgentChat() {
         sessions.value[role].messages = [];
     }
 
+    function removeLastMessage(role: AgentRole) {
+        const messages = sessions.value[role].messages;
+        if (messages.length > 0) {
+            messages.pop();
+        }
+    }
+
     return {
         sessions,
         currentAgent,
@@ -68,5 +75,6 @@ export function useAgentChat() {
         setContext,
         getSession,
         clearMessages,
+        removeLastMessage,
     };
 }
