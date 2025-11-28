@@ -21,8 +21,16 @@
     </div>
 
     <div class="form-actions">
-      <button 
-        class="btn btn-primary" 
+      <button
+        class="btn btn-secondary"
+        :disabled="disabled"
+        @click="skipToSA"
+        title="ให้ BA ตัดสินใจแทนในคำถามที่ไม่ได้ตอบ แล้วดำเนินการต่อไปยัง SA"
+      >
+        🚀 ส่งงานให้ SA เลย
+      </button>
+      <button
+        class="btn btn-primary"
         :disabled="!hasAnyAnswer || disabled"
         @click="submitAnswers"
       >
@@ -41,7 +49,24 @@ const props = defineProps<{
 const emit = defineEmits<{
   submit: [answers: string];
   skip: [];
+  skipToSA: [partialAnswers: string];
 }>();
+
+function skipToSA() {
+  // Format any partial answers user has entered
+  const formattedAnswers = props.questions
+    .map((q, i) => {
+      const answer = answers.value[i]?.trim();
+      // Mark unanswered questions so BA knows to decide
+      if (!answer) {
+        return `**คำถาม ${i + 1}:** ${q}\n**คำตอบ:** (ผู้ใช้ไม่ได้ตอบ - ให้ BA ตัดสินใจตามความเหมาะสม)`;
+      }
+      return `**คำถาม ${i + 1}:** ${q}\n**คำตอบ:** ${answer}`;
+    })
+    .join('\n\n');
+
+  emit('skipToSA', formattedAnswers);
+}
 
 const answers = ref<string[]>(props.questions.map(() => ''));
 

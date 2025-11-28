@@ -47,6 +47,7 @@
               :disabled="isStreaming"
               @submit="handleBAQuestionAnswers"
               @skip="useManualInput = true"
+              @skipToSA="handleSkipToSA"
             />
 
             <!-- Manual input mode (fallback) -->
@@ -295,7 +296,78 @@ async function handleBAQuestionAnswers(formattedAnswers: string) {
   }
 }
 
+async function handleSkipToSA(partialAnswers: string) {
+  useManualInput.value = false;
+  try {
+    // Send partial answers to BA with instruction to decide and summarize
+    const skipMessage = `${partialAnswers}
+
+---
+**คำสั่งพิเศษ:** ผู้ใช้ต้องการข้ามไปขั้นตอนถัดไปแล้ว
+- สำหรับคำถามที่ไม่ได้รับคำตอบ ให้คุณตัดสินใจตามความเหมาะสมโดยใช้หลักการ Best Practice
+- กรุณาสรุป Requirements ทั้งหมดและส่งต่อให้ SA ทันที
+- จบด้วยแท็ก <!HANDOFF!>`;
+
+    const response = await sendMessage('ba', skipMessage);
+
+    // Force handoff if BA's response is valid (not blank/too short)
+    const trimmedResponse = response?.trim() || '';
+    if (trimmedResponse.length > 50) {
+      // BA gave a meaningful response, proceed to SA
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      await handoffToSA();
+    } else {
+      // BA response too short, might be hallucination - force create summary
+      console.warn('BA response too short, forcing handoff with available context');
+      await forceHandoffToSA();
+    }
+  } catch (error) {
+    console.error('Error in skip to SA:', error);
+    // On error, try to force handoff anyway
+    await forceHandoffToSA();
+  }
+}
+
+async function forceHandoffToSA() {
+  // Get all BA conversation as summary
+  const baMessages = sessions.value.ba.messages;
+  const allBaContent = baMessages
+    .filter(m => m.role === 'assistant' && m.content?.trim())
+    .map(m => m.content)
+    .join('\n\n---\n\n');
+
+  const userStory = context.value.userStory || '';
+  const fallbackSummary = allBaContent || `User Story:\n${userStory}\n\n(BA analysis was skipped by user)`;
+
+  updateContext({ baDocument: fallbackSummary });
+  setAgentStatus('ba', 'complete');
+
+  setStep('sa-design');
+  activateAgent('sa');
+  setAgentStatus('sa', 'processing');
+
+  try {
+    const saMessage = `นี่คือเอกสารจากสรุป User Story จาก BA's. ให้ดำเนินการออกแบบ UI/UX Specification สำหรับ Prototype:\n\n${fallbackSummary}`;
+    const saResponse = await sendMessage('sa', saMessage);
+
+    updateContext({ saDocument: saResponse });
+    setAgentStatus('sa', 'complete');
+
+    proceedToDev(saResponse);
+  } catch (error) {
+    console.error('Error in SA process:', error);
+    setAgentStatus('sa', 'error');
+  }
+}
+
 async function checkIfBAReadyAndProceed(response: string) {
+  // Guard against blank/empty AI responses (hallucination prevention)
+  const trimmedResponse = response?.trim() || '';
+  if (trimmedResponse.length < 20) {
+    console.warn('BA response too short, ignoring potential hallucination');
+    return; // Don't proceed with empty/very short responses
+  }
+
   // Check if BA has explicitly signaled handoff with <!HANDOFF!> tag
   const hasHandoffTag = response.includes('<!HANDOFF!>');
 
