@@ -37,7 +37,8 @@ export function validateHTML(html: string): ValidationResult {
         let hasTailwind = false;
 
         function traverse(node: any) {
-            if (node.type === 'tag') {
+            // Check for tag or script type (htmlparser2 uses 'script' type for script tags)
+            if (node.type === 'tag' || node.type === 'script' || node.type === 'style') {
                 if (node.name === 'html') hasHtml = true;
                 if (node.name === 'head') hasHead = true;
                 if (node.name === 'body') hasBody = true;
