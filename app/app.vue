@@ -145,6 +145,7 @@
                 :is-streaming="isStreaming && currentAgent === 'dev'"
                 :auto-fix-on-error="true"
                 @fix-errors="handleReplErrors"
+                @ready="handleReplReady"
               />
             </div>
           </div>
@@ -591,17 +592,41 @@ async function fixValidationErrors() {
 }
 
 // Handle REPL compilation/runtime errors - auto-fix by sending to DEV
+// This will loop until Vue REPL Preview renders without errors
 async function handleReplErrors(payload: { code: string; errors: string[] }) {
   if (isStreaming.value) return; // Don't interrupt if already streaming
+
+  console.log('[App] handleReplErrors called with errors:', payload.errors);
 
   setStep('dev-implementation');
   setAgentStatus('dev', 'processing');
 
-  const errorType = payload.errors.some(e =>
-    e.includes('Cannot') || e.includes('undefined') || e.includes('TypeError') || e.includes('ReferenceError')
-  ) ? 'runtime errors' : 'compilation errors';
+  // Categorize errors into compilation (syntax) and runtime errors
+  const compilationErrors = payload.errors.filter(e =>
+    e.includes('Invalid') || e.includes('Unexpected') || e.includes('Expected') ||
+    e.includes('Unterminated') || e.includes('SyntaxError') || e.match(/\(\d+:\d+\)/)
+  );
+  const runtimeErrors = payload.errors.filter(e =>
+    e.includes('Cannot') || e.includes('undefined') || e.includes('TypeError') ||
+    e.includes('ReferenceError') || e.includes('is not defined') || e.includes('is not a function')
+  );
+  const otherErrors = payload.errors.filter(e =>
+    !compilationErrors.includes(e) && !runtimeErrors.includes(e)
+  );
 
-  const errorMessage = `โค้ด Vue SFC มี ${errorType} จาก REPL Preview:\n\n**Errors:**\n${payload.errors.map(e => `- ${e}`).join('\n')}\n\n**Current Code:**\n\`\`\`vue\n${payload.code}\n\`\`\`\n\nกรุณาแก้ไข errors เหล่านี้และส่งโค้ดที่ถูกต้องกลับมา โดยเฉพาะตรวจสอบ:\n- การประกาศ variables และ functions ก่อนใช้งาน\n- การ import components และ dependencies ที่จำเป็น\n- การเข้าถึง properties ของ objects ที่อาจเป็น undefined`;
+  // Build error message with categories
+  let errorDetails = '';
+  if (compilationErrors.length > 0) {
+    errorDetails += `**Syntax/Compilation Errors:**\n${compilationErrors.map(e => `- ${e}`).join('\n')}\n\n`;
+  }
+  if (runtimeErrors.length > 0) {
+    errorDetails += `**Runtime Errors:**\n${runtimeErrors.map(e => `- ${e}`).join('\n')}\n\n`;
+  }
+  if (otherErrors.length > 0) {
+    errorDetails += `**Other Errors:**\n${otherErrors.map(e => `- ${e}`).join('\n')}\n\n`;
+  }
+
+  const errorMessage = `โค้ด Vue SFC มี errors จาก REPL Preview ที่ต้องแก้ไข:\n\n${errorDetails}**Current Code:**\n\`\`\`vue\n${payload.code}\n\`\`\`\n\nกรุณาแก้ไข errors ทั้งหมดและส่งโค้ดที่ถูกต้องกลับมา โดยเฉพาะตรวจสอบ:\n- Syntax errors: ตรวจสอบ tag ปิด/เปิดให้ถูกต้อง, ไม่มี tag ที่ไม่ถูกต้อง\n- การประกาศ variables และ functions ก่อนใช้งาน\n- การ import components และ dependencies ที่จำเป็น\n- การเข้าถึง properties ของ objects ที่อาจเป็น undefined\n- ตรวจสอบว่า template, script, และ style sections ถูกต้อง`;
 
   try {
     const devResponse = await sendMessage('dev', errorMessage);
@@ -611,11 +636,26 @@ async function handleReplErrors(payload: { code: string; errors: string[] }) {
       const fixedCode = vueMatch[1];
       updateContext({ htmlPrototype: fixedCode });
       setAgentStatus('dev', 'complete');
-      setStep('preview');
+      // Stay on dev-implementation step - VueReplPreview will auto-check for errors
+      // If there are still errors, it will emit 'fix-errors' again and loop back here
+      // If no errors, user can manually proceed or we stay on dev-implementation showing success
+      console.log('[App] Dev returned fixed code, waiting for VueReplPreview to validate...');
+      // Don't change step - let VueReplPreview validate first
+      // The component will show "Ready" status if no errors
     }
   } catch (error) {
     console.error('Error fixing REPL errors:', error);
     setAgentStatus('dev', 'error');
+  }
+}
+
+// Handle VueReplPreview ready event - code compiled successfully without errors
+function handleReplReady() {
+  console.log('[App] VueReplPreview ready - no errors, proceeding to preview');
+  // Only proceed to preview if we're in dev-implementation step
+  if (currentStep.value === 'dev-implementation') {
+    setAgentStatus('dev', 'complete');
+    setStep('preview');
   }
 }
 

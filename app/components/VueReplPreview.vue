@@ -83,6 +83,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'errors', errors: string[]): void;
   (e: 'fix-errors', payload: { code: string; errors: string[] }): void;
+  (e: 'ready'): void; // Emitted when code compiles successfully without errors
 }>();
 
 // Tailwind CSS CDN for preview (split to avoid script tag parsing issues)
@@ -184,31 +185,61 @@ function handleRuntimeMessage(event: MessageEvent) {
   }
 }
 
-// Poll for error messages in the REPL preview (Vue REPL shows errors in .msg.err elements)
+// Poll for error messages in the REPL (both compilation and runtime errors from DOM)
 let errorPollingInterval: ReturnType<typeof setInterval> | null = null;
 
-function checkForRuntimeErrors() {
+function checkForAllReplErrors() {
   // Look for Vue REPL's error message elements
   const container = document.querySelector('.vue-repl-container');
   if (!container) return;
 
-  // Vue REPL displays errors in elements with class 'msg err'
-  const errorElements = container.querySelectorAll('.msg.err, .preview .msg');
+  // Vue REPL displays errors in various elements:
+  // - .msg.err - general error messages
+  // - .preview .msg - preview runtime errors
+  // - .editor .error - syntax errors in editor
+  // - [class*="error"] - any element with error class
+  const errorSelectors = [
+    '.msg.err',
+    '.preview .msg',
+    '.msg.error',
+    '.vue-repl .msg',
+    '[class*="err"]:not(button):not(.error-panel):not(.error-header):not(.error-list):not(.error-item):not(.error-icon):not(.error-message):not(.error-badge)',
+  ];
+
+  const errorElements = container.querySelectorAll(errorSelectors.join(', '));
 
   errorElements.forEach((el) => {
     const errorText = el.textContent?.trim();
-    if (errorText && !runtimeErrors.value.includes(errorText)) {
+    // Filter out UI elements and only capture actual error messages
+    if (errorText &&
+        errorText.length > 5 &&
+        errorText.length < 500 &&
+        !runtimeErrors.value.includes(errorText) &&
+        !errorText.includes('Auto Fix') &&
+        !errorText.includes('Runtime Errors') &&
+        !errorText.includes('Compilation Errors')) {
       runtimeErrors.value = [...runtimeErrors.value, errorText];
       dismissedErrors.value = false;
       emit('errors', allErrors.value);
     }
   });
+
+  // Also check replStore.errors directly (compilation errors from Vue compiler)
+  if (replStore.value?.errors && replStore.value.errors.length > 0) {
+    replStore.value.errors.forEach((err: string | Error) => {
+      const errStr = formatError(err);
+      if (errStr && !currentErrors.value.map(formatError).includes(errStr)) {
+        currentErrors.value = [...currentErrors.value, err];
+        dismissedErrors.value = false;
+      }
+    });
+  }
 }
 
 function startErrorPolling() {
   if (errorPollingInterval) return;
-  // Poll every 500ms to detect runtime errors
-  errorPollingInterval = setInterval(checkForRuntimeErrors, 500);
+  // Poll every 500ms to detect all REPL errors (compilation + runtime)
+  errorPollingInterval = setInterval(checkForAllReplErrors, 500);
 }
 
 function stopErrorPolling() {
@@ -278,31 +309,72 @@ function updateReplCode(code: string) {
   }, 'App.vue');
 }
 
-// Watch for code changes
-watch(() => props.code, (newCode) => {
-  if (newCode && replStore.value) {
-    updateReplCode(newCode);
-    // Reset dismissed errors when new code comes in
-    dismissedErrors.value = false;
-    hasTriggeredAutoFix.value = false; // Reset auto-fix flag for new code
-    runtimeErrors.value = []; // Reset runtime errors for new code
-  }
-}, { immediate: false });
+// Track pending auto-fix check
+let autoFixCheckTimeout: ReturnType<typeof setTimeout> | null = null;
+let hasEmittedReady = false; // Track if we already emitted ready for current code
 
-// Auto-fix: when streaming ends and there are errors, trigger fix automatically
-watch(() => props.isStreaming, (isStreaming, wasStreaming) => {
-  // Streaming just ended (was true, now false)
-  if (wasStreaming && !isStreaming && props.autoFixOnError) {
-    // Wait a bit for REPL to detect errors (including runtime errors)
-    setTimeout(() => {
-      if (allErrors.value.length > 0 && !hasTriggeredAutoFix.value && props.code) {
+// Function to check and trigger auto-fix if needed, or emit ready if no errors
+function checkAndTriggerAutoFix() {
+  // Clear any pending timeout
+  if (autoFixCheckTimeout) {
+    clearTimeout(autoFixCheckTimeout);
+    autoFixCheckTimeout = null;
+  }
+
+  // Wait a bit for REPL to compile and detect errors
+  autoFixCheckTimeout = setTimeout(() => {
+    if (!props.isStreaming && props.code) {
+      if (allErrors.value.length > 0 && props.autoFixOnError && !hasTriggeredAutoFix.value) {
+        // Has errors - trigger auto-fix
+        console.log('[VueReplPreview] Auto-triggering fix for errors:', allErrors.value);
         hasTriggeredAutoFix.value = true;
+        hasEmittedReady = false;
         emit('fix-errors', {
           code: props.code,
           errors: allErrors.value
         });
+      } else if (allErrors.value.length === 0 && !hasEmittedReady) {
+        // No errors - emit ready event
+        console.log('[VueReplPreview] Code compiled successfully, emitting ready');
+        hasEmittedReady = true;
+        emit('ready');
       }
-    }, 1500); // Give REPL time to compile and detect runtime errors
+    }
+  }, 2000); // Give REPL time to compile and detect runtime errors
+}
+
+// Watch for code changes
+watch(() => props.code, (newCode, oldCode) => {
+  if (newCode && replStore.value) {
+    updateReplCode(newCode);
+    // Reset dismissed errors when new code comes in
+    dismissedErrors.value = false;
+    runtimeErrors.value = []; // Reset runtime errors for new code
+
+    // Reset flags for genuinely new code (not just whitespace changes)
+    if (newCode !== oldCode) {
+      hasTriggeredAutoFix.value = false;
+      hasEmittedReady = false; // Reset ready flag for new code
+      // Check for errors after code update (for auto-fix loop)
+      if (!props.isStreaming && props.autoFixOnError) {
+        checkAndTriggerAutoFix();
+      }
+    }
+  }
+}, { immediate: false });
+
+// Auto-fix: when streaming ends, trigger error check
+watch(() => props.isStreaming, (isStreaming, wasStreaming) => {
+  // Streaming just ended (was true, now false)
+  if (wasStreaming && !isStreaming && props.autoFixOnError) {
+    checkAndTriggerAutoFix();
+  }
+}, { immediate: false });
+
+// Also watch for errors appearing (for runtime errors that appear after compilation)
+watch(allErrors, (errors) => {
+  if (errors.length > 0 && !props.isStreaming && props.autoFixOnError && !hasTriggeredAutoFix.value) {
+    checkAndTriggerAutoFix();
   }
 }, { immediate: false });
 
