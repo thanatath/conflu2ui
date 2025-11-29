@@ -2,8 +2,22 @@
   <div class="agent-documents-summary">
     <div class="summary-header glass">
       <div class="header-content">
-        <h2 class="gradient-text">📚 Agent Documents Summary</h2>
-        <p class="text-secondary">สรุปเอกสารจากทุก Agent ในกระบวนการทำงาน</p>
+        <div class="header-title-row">
+          <div>
+            <h2 class="gradient-text">📚 Agent Documents Summary</h2>
+            <p class="text-secondary">สรุปเอกสารจากทุก Agent ในกระบวนการทำงาน</p>
+          </div>
+          <button
+            v-if="hasAnyDocument"
+            class="download-zip-btn"
+            @click="downloadZip"
+            :disabled="isDownloading"
+          >
+            <span v-if="isDownloading" class="loading-spinner">⏳</span>
+            <span v-else>📦</span>
+            {{ isDownloading ? 'กำลังสร้างไฟล์...' : 'ดาวน์โหลด ZIP' }}
+          </button>
+        </div>
       </div>
       <div class="agents-progress">
         <div v-for="agent in agentsList" :key="agent.id" 
@@ -105,6 +119,7 @@
 
 <script setup lang="ts">
 import MarkdownIt from 'markdown-it';
+import JSZip from 'jszip';
 import CodeBlock from './CodeBlock.vue';
 
 const props = defineProps<{
@@ -114,6 +129,7 @@ const props = defineProps<{
 }>();
 
 const md = new MarkdownIt({ html: true, linkify: true, breaks: true });
+const isDownloading = ref(false);
 
 const renderedBA = computed(() => {
   if (!props.baDocument) return '';
@@ -136,6 +152,54 @@ const agentsList = computed(() => [
   { id: 'sa', name: 'SA', icon: '🏗️', hasDocument: !!props.saDocument },
   { id: 'dev', name: 'DEV', icon: '💻', hasDocument: !!props.devDocument },
 ]);
+
+const hasAnyDocument = computed(() => {
+  return !!props.baDocument || !!props.saDocument || !!props.devDocument;
+});
+
+async function downloadZip() {
+  if (isDownloading.value) return;
+
+  isDownloading.value = true;
+
+  try {
+    const zip = new JSZip();
+    const timestamp = new Date().toISOString().slice(0, 10);
+
+    // Add BA Document
+    if (props.baDocument) {
+      const baContent = props.baDocument.replace(/<!SUMMARY!>/g, '').trim();
+      zip.file('Business_Analyst.md', `# Business Analyst Document\n\n${baContent}`);
+    }
+
+    // Add SA Document
+    if (props.saDocument) {
+      zip.file('System_Analyst.md', `# System Analyst Document\n\n${props.saDocument}`);
+    }
+
+    // Add DEV Document
+    if (props.devDocument) {
+      zip.file('Developer.vue', props.devDocument);
+    }
+
+    // Generate ZIP
+    const blob = await zip.generateAsync({ type: 'blob' });
+
+    // Create download link
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Documents_Summary_${timestamp}.zip`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Error creating ZIP:', error);
+  } finally {
+    isDownloading.value = false;
+  }
+}
 </script>
 
 <style scoped>
@@ -155,6 +219,49 @@ const agentsList = computed(() => [
 .header-content h2 {
   font-size: 32px;
   margin-bottom: 8px;
+}
+
+.header-title-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.download-zip-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  border: none;
+  border-radius: 12px;
+  color: white;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.download-zip-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(160, 80, 255, 0.4);
+}
+
+.download-zip-btn:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.loading-spinner {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .agents-progress {

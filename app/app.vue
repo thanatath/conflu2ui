@@ -5,10 +5,16 @@
   <!-- Main application -->
   <div v-else class="app-container">
     <header class="app-header">
-      <div class="header-content">
-        <h1 class="gradient-text">Conflu2UI</h1>
-        <p class="text-secondary">Transform User Stories into Interactive Prototypes</p>
+      <div class="header-left">
+        <div class="logo-section">
+          <span class="logo-icon">🚀</span>
+          <div class="title-group">
+            <h1 class="gradient-text">Conflu2UI</h1>
+            <p class="tagline">AI-Powered Prototyping</p>
+          </div>
+        </div>
       </div>
+
       <!-- Tab Navigation -->
       <nav class="main-tabs">
         <button
@@ -16,7 +22,7 @@
           :class="{ active: activeMainTab === 'workflow' }"
           @click="activeMainTab = 'workflow'"
         >
-          <span class="tab-icon">⚙️</span>
+          <span class="tab-icon">⚡</span>
           <span>Workflow</span>
         </button>
         <button
@@ -24,8 +30,8 @@
           :class="{ active: activeMainTab === 'documents', 'has-documents': hasAnyDocument }"
           @click="activeMainTab = 'documents'"
         >
-          <span class="tab-icon">📚</span>
-          <span>Documents Summary</span>
+          <span class="tab-icon">📄</span>
+          <span>Documents</span>
           <span v-if="documentCount > 0" class="doc-count">{{ documentCount }}</span>
         </button>
       </nav>
@@ -52,8 +58,8 @@
         <section class="step-content">
         <!-- Step 1: Upload User Story -->
         <div v-if="currentStep === 'upload-story'" class="step-container animate-slide-in-up">
-          <FileUpload title="Upload User Story" description="Upload your user story document (markdown or text file)"
-            accept=".md,.txt,text/markdown,text/plain" accept-label="Markdown (.md) or Text (.txt) files"
+          <FileUpload title="Upload User Story" description="Upload your user story document (Word, Markdown, or Text file)"
+            accept=".doc,.docx,.md,.txt,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,text/markdown,text/plain" accept-label="Word (.doc, .docx), Markdown (.md), or Text (.txt) files"
             :multiple="false" @upload="handleUserStoryUpload" />
         </div>
 
@@ -225,7 +231,7 @@ const isPreviewRoute = computed(() => route.path === '/preview');
 const { currentStep, context, updateContext, uploadUserStory, uploadImages, handoffToSA: workflowHandoffToSA, handoffToDev, validatePrototype, setStep } = useWorkflow();
 const { sessions, currentAgent, addMessage, setAgentStatus, activateAgent } = useAgentChat();
 const { sendMessage, isStreaming, lastError, clearError } = useAIStream();
-const { readFileAsText, readFileAsBase64 } = useFileHandler();
+const { readFileAsText, readFileAsBase64, readFileContent } = useFileHandler();
 
 // Track last action for retry
 const lastAction = ref<{ type: string; payload: any } | null>(null);
@@ -248,6 +254,33 @@ const documentCount = computed(() => {
   if (context.value.saDocument) count++;
   if (context.value.htmlPrototype) count++;
   return count;
+});
+
+// Agent status computeds for header status bar
+const baSteps = ['upload-story', 'upload-images', 'ba-conversation', 'ba-confirmation'];
+const saSteps = ['sa-design'];
+const devSteps = ['dev-implementation', 'validation', 'preview', 'iteration'];
+
+const isBAActive = computed(() => baSteps.includes(currentStep.value));
+const isSAActive = computed(() => saSteps.includes(currentStep.value));
+const isDEVActive = computed(() => devSteps.includes(currentStep.value));
+
+const isBACompleted = computed(() => {
+  const allSteps = [...baSteps, ...saSteps, ...devSteps];
+  const currentIndex = allSteps.indexOf(currentStep.value);
+  const lastBAIndex = allSteps.indexOf(baSteps[baSteps.length - 1]);
+  return currentIndex > lastBAIndex;
+});
+
+const isSACompleted = computed(() => {
+  const allSteps = [...baSteps, ...saSteps, ...devSteps];
+  const currentIndex = allSteps.indexOf(currentStep.value);
+  const lastSAIndex = allSteps.indexOf(saSteps[saSteps.length - 1]);
+  return currentIndex > lastSAIndex;
+});
+
+const isDEVCompleted = computed(() => {
+  return currentStep.value === 'preview' || currentStep.value === 'iteration';
 });
 
 // Parse BA summary from last message using <!SUMMARY!> tag
@@ -344,7 +377,8 @@ function getMessagesWithoutCode(messages: Message[]): Message[] {
 // Step 1: Handle User Story Upload
 async function handleUserStoryUpload(files: File[]) {
   try {
-    const content = await readFileAsText(files[0]);
+    // Use readFileContent which handles Word documents automatically
+    const content = await readFileContent(files[0]);
     await uploadUserStory(content);
     setStep('upload-images');
   } catch (error) {
@@ -684,44 +718,134 @@ async function handleDevIteration(message: string) {
 .app-container {
   min-height: 100vh;
   padding-bottom: 60px;
+  position: relative;
+  overflow-x: hidden;
 }
 
+/* AI Background Effects */
+.ai-background {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.grid-pattern {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(160, 80, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(160, 80, 255, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+}
+
+.glow-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.3;
+  animation: float-orb 20s ease-in-out infinite;
+}
+
+.orb-1 {
+  width: 400px;
+  height: 400px;
+  background: radial-gradient(circle, rgba(160, 80, 255, 0.4) 0%, transparent 70%);
+  top: -100px;
+  left: -100px;
+  animation-delay: 0s;
+}
+
+.orb-2 {
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(80, 200, 255, 0.3) 0%, transparent 70%);
+  top: 50%;
+  right: -50px;
+  animation-delay: -7s;
+}
+
+.orb-3 {
+  width: 350px;
+  height: 350px;
+  background: radial-gradient(circle, rgba(255, 100, 200, 0.25) 0%, transparent 70%);
+  bottom: -100px;
+  left: 30%;
+  animation-delay: -14s;
+}
+
+@keyframes float-orb {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(30px, -30px) scale(1.1); }
+  50% { transform: translate(-20px, 20px) scale(0.9); }
+  75% { transform: translate(20px, 10px) scale(1.05); }
+}
+
+/* Header - Compact */
 .app-header {
-  padding: 40px 20px;
-  text-align: center;
-  background: linear-gradient(180deg, rgba(160, 80, 255, 0.1) 0%, transparent 100%);
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 32px;
+  background: rgba(15, 15, 25, 0.9);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(10px);
 }
 
-.header-content h1 {
-  font-size: 56px;
-  margin-bottom: 12px;
+.header-left {
+  display: flex;
+  align-items: center;
 }
 
-.header-content p {
-  font-size: 18px;
+.logo-section {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.logo-icon {
+  font-size: 28px;
+}
+
+.title-group {
+  text-align: left;
+}
+
+.title-group h1 {
+  font-size: 24px;
+  margin-bottom: 2px;
+  letter-spacing: -0.5px;
+}
+
+.tagline {
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 /* Tab Navigation */
 .main-tabs {
   display: flex;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 24px;
+  gap: 8px;
 }
 
 .tab-btn {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 24px;
+  gap: 6px;
+  padding: 10px 20px;
   background: rgba(255, 255, 255, 0.03);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.3s ease;
+  transition: all 0.2s ease;
 }
 
 .tab-btn:hover {
@@ -730,10 +854,9 @@ async function handleDevIteration(message: string) {
 }
 
 .tab-btn.active {
-  background: linear-gradient(135deg, rgba(160, 80, 255, 0.2), rgba(80, 200, 255, 0.1));
-  border-color: var(--primary);
+  background: linear-gradient(135deg, rgba(160, 80, 255, 0.15), rgba(80, 200, 255, 0.08));
+  border-color: rgba(160, 80, 255, 0.5);
   color: var(--text-primary);
-  box-shadow: 0 0 20px rgba(160, 80, 255, 0.3);
 }
 
 .tab-btn.has-documents:not(.active) {
@@ -741,42 +864,41 @@ async function handleDevIteration(message: string) {
 }
 
 .tab-btn .tab-icon {
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .tab-btn .doc-count {
   background: var(--success);
   color: white;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 10px;
-  min-width: 20px;
-  text-align: center;
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+/* Main Content */
+.main-content {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 24px;
 }
 
 .documents-tab-content {
   max-width: 1400px;
   margin: 0 auto;
-  padding: 20px;
-}
-
-.main-content {
-  max-width: 1600px;
-  margin: 0 auto;
-  padding: 0 20px;
+  padding: 24px;
 }
 
 .two-column-layout {
   display: grid;
-  grid-template-columns: 320px 1fr;
-  gap: 32px;
+  grid-template-columns: 280px 1fr;
+  gap: 24px;
   align-items: start;
 }
 
 .workflow-sidebar {
   position: sticky;
-  top: 20px;
+  top: 24px;
 }
 
 .step-content {

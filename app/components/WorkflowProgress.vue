@@ -1,27 +1,71 @@
 <template>
     <div class="workflow-progress glass">
-        <div class="progress-header">
-            <h3>Multi-Agent Workflow</h3>
-            <div class="current-step-badge">
-                {{ getCurrentStepLabel() }}
+        <!-- Current Phase Header -->
+        <div class="phase-header">
+            <div class="phase-badge" :class="currentPhase">
+                <span class="phase-icon">{{ getCurrentPhaseIcon() }}</span>
+                <span class="phase-label">{{ getCurrentPhaseLabel() }}</span>
             </div>
         </div>
 
-        <div class="steps-container">
-            <div v-for="(step, index) in workflowSteps" :key="step.id" class="step-item" :class="{
-                active: currentStep === step.id,
-                completed: isStepCompleted(step.id),
-                upcoming: !isStepCompleted(step.id) && currentStep !== step.id
-            }">
-                <div class="step-number">
+        <!-- Agent Flow - Horizontal -->
+        <div class="agent-flow">
+            <!-- BA Agent -->
+            <div class="agent-node" :class="{ active: isAgentActive('ba'), completed: isAgentCompleted('ba') }">
+                <div class="node-icon ba">📋</div>
+                <div class="node-label">BA</div>
+            </div>
+
+            <!-- Arrow 1 -->
+            <div class="flow-arrow" :class="{ active: isAgentCompleted('ba') }">
+                <span>→</span>
+            </div>
+
+            <!-- SA Agent -->
+            <div class="agent-node" :class="{ active: isAgentActive('sa'), completed: isAgentCompleted('sa') }">
+                <div class="node-icon sa">🏗️</div>
+                <div class="node-label">SA</div>
+            </div>
+
+            <!-- Arrow 2 -->
+            <div class="flow-arrow" :class="{ active: isAgentCompleted('sa') }">
+                <span>→</span>
+            </div>
+
+            <!-- DEV Agent -->
+            <div class="agent-node" :class="{ active: isAgentActive('dev'), completed: isAgentCompleted('dev') }">
+                <div class="node-icon dev">💻</div>
+                <div class="node-label">DEV</div>
+            </div>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="progress-section">
+            <div class="progress-header">
+                <span class="progress-label">Progress: </span>
+                <span class="progress-text"> {{ progressPercentage }}%</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" :style="{ width: progressPercentage + '%' }"></div>
+            </div>
+        </div>
+
+        <!-- Step List -->
+        <div class="steps-list">
+            <div
+                v-for="(step, index) in workflowSteps"
+                :key="step.id"
+                class="step-row"
+                :class="{
+                    active: currentStep === step.id,
+                    completed: isStepCompleted(step.id)
+                }"
+            >
+                <div class="step-marker">
                     <span v-if="isStepCompleted(step.id)">✓</span>
                     <span v-else>{{ index + 1 }}</span>
                 </div>
-                <div class="step-info">
-                    <div class="step-title">{{ step.title }}</div>
-                    <div class="step-description">{{ step.description }}</div>
-                </div>
-                <div v-if="index < workflowSteps.length - 1" class="step-connector"></div>
+                <span class="step-name">{{ step.title }}</span>
             </div>
         </div>
     </div>
@@ -34,21 +78,65 @@ const props = defineProps<{
     currentStep: WorkflowStep;
 }>();
 
-const workflowSteps = [
-    { id: 'upload-story', title: '📄 Upload Story', description: 'Provide user story document' },
-    { id: 'upload-images', title: '🖼️ Reference Images', description: 'Optional screen mockups' },
-    { id: 'ba-conversation', title: '📋 BA Review', description: 'Business Analyst clarification' },
-    { id: 'ba-confirmation', title: '✓ BA Summary', description: 'Confirm requirements' },
-    { id: 'sa-design', title: '🏗️ SA Design', description: 'System architecture & spec' },
-    { id: 'dev-implementation', title: '💻 DEV Build', description: 'Developer implementation' },
-    { id: 'validation', title: '✅ Validation', description: 'HTML syntax check' },
-    { id: 'preview', title: '👁️ Preview', description: 'Interactive prototype' },
-    { id: 'iteration', title: '🔄 Iterate', description: 'Refine & improve' },
+const agentFlow = [
+    {
+        id: 'ba',
+        name: 'BA',
+        role: 'Business Analyst',
+        icon: '📋',
+        gradient: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+        steps: ['upload-story', 'upload-images', 'ba-conversation', 'ba-confirmation']
+    },
+    {
+        id: 'sa',
+        name: 'SA',
+        role: 'System Analyst',
+        icon: '🏗️',
+        gradient: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+        steps: ['sa-design']
+    },
+    {
+        id: 'dev',
+        name: 'DEV',
+        role: 'Developer',
+        icon: '💻',
+        gradient: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+        steps: ['dev-implementation', 'validation', 'preview', 'iteration']
+    }
 ];
 
-function getCurrentStepLabel(): string {
-    const step = workflowSteps.find(s => s.id === props.currentStep);
-    return step ? `${step.title}` : '';
+const workflowSteps = [
+    { id: 'upload-story', title: 'Upload Story' },
+    { id: 'upload-images', title: 'Reference Images' },
+    { id: 'ba-conversation', title: 'BA Review' },
+    { id: 'ba-confirmation', title: 'BA Summary' },
+    { id: 'sa-design', title: 'SA Design' },
+    { id: 'dev-implementation', title: 'DEV Build' },
+    { id: 'validation', title: 'Validation' },
+    { id: 'preview', title: 'Preview' },
+    { id: 'iteration', title: 'Iterate' },
+];
+
+function isAgentActive(agentId: string): boolean {
+    const agent = agentFlow.find(a => a.id === agentId);
+    return agent ? agent.steps.includes(props.currentStep) : false;
+}
+
+function isAgentCompleted(agentId: string): boolean {
+    const agent = agentFlow.find(a => a.id === agentId);
+    if (!agent) return false;
+    const currentIndex = workflowSteps.findIndex(s => s.id === props.currentStep);
+    const lastStepIndex = Math.max(...agent.steps.map(s => workflowSteps.findIndex(ws => ws.id === s)));
+    return currentIndex > lastStepIndex;
+}
+
+function isHandoffActive(index: number): boolean {
+    return isAgentCompleted(agentFlow[index].id);
+}
+
+function getHandoffLabel(index: number): string {
+    if (index === 0) return 'ส่งงาน';
+    return 'ส่งต่อ';
 }
 
 function isStepCompleted(stepId: string): boolean {
@@ -56,155 +144,265 @@ function isStepCompleted(stepId: string): boolean {
     const stepIndex = workflowSteps.findIndex(s => s.id === stepId);
     return stepIndex < currentIndex;
 }
+
+const currentPhase = computed(() => {
+    const agent = agentFlow.find(a => a.steps.includes(props.currentStep));
+    return agent?.id || 'ba';
+});
+
+function getCurrentPhaseLabel(): string {
+    const step = workflowSteps.find(s => s.id === props.currentStep);
+    return step?.title || 'Getting Started';
+}
+
+function getCurrentPhaseIcon(): string {
+    const phase = currentPhase.value;
+    if (phase === 'ba') return '📋';
+    if (phase === 'sa') return '🏗️';
+    return '💻';
+}
+
+const progressPercentage = computed(() => {
+    const currentIndex = workflowSteps.findIndex(s => s.id === props.currentStep);
+    return Math.round(((currentIndex + 1) / workflowSteps.length) * 100);
+});
 </script>
 
 <style scoped>
 .workflow-progress {
-    padding: 20px;
+    padding: 16px;
 }
 
-.progress-header {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    margin-bottom: 20px;
-}
-
-.progress-header h3 {
-    font-size: 18px;
-    margin: 0;
-    background: linear-gradient(135deg, var(--primary), var(--accent));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-}
-
-.current-step-badge {
-    padding: 8px 12px;
-    background: linear-gradient(135deg, var(--primary), var(--accent));
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 600;
-    color: white;
+/* Phase Header */
+.phase-header {
+    margin-bottom: 16px;
     text-align: center;
 }
 
-.steps-container {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
+.phase-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 16px;
+    font-size: 12px;
+    font-weight: 600;
 }
 
-.step-item {
-    position: relative;
+.phase-badge.ba {
+    background: linear-gradient(135deg, rgba(102, 126, 234, 0.2), rgba(118, 75, 162, 0.2));
+    border: 1px solid rgba(118, 75, 162, 0.4);
+    color: #a78bfa;
+}
+
+.phase-badge.sa {
+    background: linear-gradient(135deg, rgba(240, 147, 251, 0.2), rgba(245, 87, 108, 0.2));
+    border: 1px solid rgba(245, 87, 108, 0.4);
+    color: #f472b6;
+}
+
+.phase-badge.dev {
+    background: linear-gradient(135deg, rgba(79, 172, 254, 0.2), rgba(0, 242, 254, 0.2));
+    border: 1px solid rgba(0, 242, 254, 0.4);
+    color: #22d3ee;
+}
+
+.phase-icon {
+    font-size: 16px;
+}
+
+/* Agent Flow - Horizontal layout */
+.agent-flow {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding: 10px 8px;
     background: rgba(255, 255, 255, 0.02);
     border-radius: 10px;
-    transition: all 0.3s ease;
+}
+
+.agent-node {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.05);
     opacity: 0.5;
+    transition: all 0.3s ease;
+    flex: 1;
+    max-width: 70px;
 }
 
-.step-item.completed {
-    opacity: 0.7;
-}
-
-.step-item.active {
+.agent-node.active {
     opacity: 1;
     background: rgba(160, 80, 255, 0.1);
-    border: 1px solid var(--primary);
-    box-shadow: 0 0 15px rgba(160, 80, 255, 0.3);
-    animation: pulse-glow 2s ease-in-out infinite;
+    border-color: rgba(160, 80, 255, 0.4);
+    box-shadow: 0 0 20px rgba(160, 80, 255, 0.2);
 }
 
-.step-item.upcoming {
-    opacity: 0.4;
+.agent-node.completed {
+    opacity: 0.8;
+    background: rgba(80, 200, 120, 0.1);
+    border-color: rgba(80, 200, 120, 0.3);
 }
 
-.step-number {
+.node-icon {
     width: 32px;
     height: 32px;
-    min-width: 32px;
-    border-radius: 50%;
-    background: var(--bg-card);
-    border: 2px solid var(--border-color);
     display: flex;
     align-items: center;
     justify-content: center;
+    border-radius: 8px;
+    font-size: 16px;
+}
+
+.node-icon.ba { background: linear-gradient(135deg, #667eea, #764ba2); }
+.node-icon.sa { background: linear-gradient(135deg, #f093fb, #f5576c); }
+.node-icon.dev { background: linear-gradient(135deg, #4facfe, #00f2fe); }
+
+.node-label {
+    font-size: 10px;
     font-weight: 700;
-    font-size: 14px;
-    transition: all 0.3s ease;
+    color: var(--text-secondary);
+    text-transform: uppercase;
 }
 
-.step-item.active .step-number {
-    background: linear-gradient(135deg, var(--primary), var(--accent));
-    border-color: transparent;
-    color: white;
-    transform: scale(1.1);
-}
-
-.step-item.completed .step-number {
-    background: var(--success);
-    border-color: var(--success);
-    color: white;
-}
-
-.step-info {
-    flex: 1;
-    min-width: 0;
-}
-
-.step-title {
-    font-size: 13px;
-    font-weight: 600;
+.agent-node.active .node-label,
+.agent-node.completed .node-label {
     color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
-.step-description {
-    font-size: 11px;
+.flow-arrow {
     color: var(--text-muted);
-    white-space: nowrap;
+    font-size: 14px;
+    opacity: 0.3;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+}
+
+.flow-arrow.active {
+    opacity: 1;
+    color: var(--success);
+}
+
+/* Progress Section */
+.progress-section {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    padding: 0 2px;
+}
+
+.progress-bar {
+    flex: 1;
+    height: 6px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 3px;
     overflow: hidden;
-    text-overflow: ellipsis;
 }
 
-.step-connector {
-    display: none;
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #a78bfa, #22d3ee);
+    border-radius: 3px;
+    transition: width 0.5s ease;
 }
 
-/* Responsive: When stacked (on mobile), use same vertical layout */
+.progress-text {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    min-width: 36px;
+    text-align: right;
+}
+
+/* Steps List */
+.steps-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.step-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    opacity: 0.4;
+    transition: all 0.2s ease;
+}
+
+.step-row.completed {
+    opacity: 0.65;
+}
+
+.step-row.active {
+    opacity: 1;
+    background: rgba(160, 80, 255, 0.1);
+    border-left: 3px solid var(--primary);
+}
+
+.step-marker {
+    width: 20px;
+    height: 20px;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, 0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.step-row.active .step-marker {
+    background: linear-gradient(135deg, var(--primary), var(--accent));
+    color: white;
+}
+
+.step-row.completed .step-marker {
+    background: var(--success);
+    color: white;
+}
+
+.step-name {
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+
+.step-row.active .step-name {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+/* Responsive */
+@media (max-width: 400px) {
+    .agent-flow {
+        gap: 4px;
+        padding: 12px 8px;
+    }
+
+    .agent-node {
+        padding: 8px 10px;
+    }
+
+    .node-icon {
+        width: 32px;
+        height: 32px;
+        font-size: 16px;
+    }
+}
+
 @media (max-width: 1024px) {
     .workflow-progress {
         margin-bottom: 24px;
-    }
-
-    .progress-header {
-        flex-direction: row;
-        justify-content: space-between;
-        align-items: center;
-    }
-
-    .steps-container {
-        flex-direction: row;
-        flex-wrap: wrap;
-        gap: 8px;
-    }
-
-    .step-item {
-        flex: 0 0 auto;
-        min-width: 140px;
-        flex-direction: column;
-        text-align: center;
-        padding: 12px;
-    }
-
-    .step-info {
-        text-align: center;
     }
 }
 </style>

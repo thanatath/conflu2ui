@@ -108,7 +108,9 @@ const dismissedErrors = ref(false);
 const hasTriggeredAutoFix = ref(false); // Prevent multiple auto-fix triggers
 
 // Track if preview is ready (no errors, not streaming, has code)
-const isReadyForPreview = ref(false);
+const isReadyForPreview = computed(() => {
+  return !!props.code && !props.isStreaming && !hasErrors.value;
+});
 
 // Combine compilation and runtime errors (filter out warnings)
 const allErrors = computed(() => {
@@ -396,10 +398,9 @@ function checkAndTriggerAutoFix() {
           errors: allErrors.value
         });
       } else if (allErrors.value.length === 0 && !hasEmittedReady) {
-        // No errors - emit ready event and mark ready for preview
+        // No errors - emit ready event
         console.log('[VueReplPreview] Code compiled successfully, emitting ready');
         hasEmittedReady = true;
-        isReadyForPreview.value = true;
         emit('ready');
       }
     }
@@ -418,7 +419,6 @@ watch(() => props.code, (newCode, oldCode) => {
     if (newCode !== oldCode) {
       hasTriggeredAutoFix.value = false;
       hasEmittedReady = false; // Reset ready flag for new code
-      isReadyForPreview.value = false; // Reset preview ready flag for new code
       // Check for errors after code update (for auto-fix loop)
       if (!props.isStreaming && props.autoFixOnError) {
         checkAndTriggerAutoFix();
