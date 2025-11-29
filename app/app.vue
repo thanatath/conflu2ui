@@ -239,7 +239,7 @@ const route = useRoute();
 const isPreviewRoute = computed(() => route.path === '/preview');
 
 const { currentStep, context, updateContext, uploadUserStory, uploadImages, handoffToSA: workflowHandoffToSA, handoffToDev, validatePrototype, setStep } = useWorkflow();
-const { sessions, currentAgent, addMessage, setAgentStatus, activateAgent } = useAgentChat();
+const { sessions, currentAgent, addMessage, setAgentStatus, activateAgent, clearMessages } = useAgentChat();
 const { sendMessage, isStreaming, lastError, clearError } = useAIStream();
 const { readFileAsText, readFileAsBase64, readFileContent } = useFileHandler();
 
@@ -249,6 +249,11 @@ const lastAction = ref<{ type: string; payload: any } | null>(null);
 const isValidating = ref(false);
 const useManualInput = ref(false);
 const isEditingBA = ref(false); // Track if user is editing BA summary
+
+// Track dev agent retry count for REPL error fixes
+// After 2 failed attempts, reset dev session and restart with SA spec
+const devReplRetryCount = ref(0);
+const MAX_DEV_REPL_RETRIES = 2;
 
 // Tab navigation state
 const activeMainTab = ref<'workflow' | 'documents'>('workflow');
@@ -570,6 +575,9 @@ async function proceedToDev(saDocument: string) {
   setAgentStatus('dev', 'processing');
   lastAction.value = { type: 'dev-process', payload: { saDocument } };
 
+  // Reset retry counter when starting fresh dev session
+  devReplRetryCount.value = 0;
+
   try {
     // DEV creates the Vue SFC prototype based on SA's specification - with reference images
     const devMessage = `จากเอกสาร SA's UI/UX Specification. ดำเนินการพัฒนา Vue SFC prototype (App.vue):\n\n${saDocument}`;
@@ -645,10 +653,35 @@ async function fixValidationErrors() {
 
 // Handle REPL compilation/runtime errors - auto-fix by sending to DEV
 // This will loop until Vue REPL Preview renders without errors
+// After MAX_DEV_REPL_RETRIES failed attempts, reset dev session and start fresh with SA spec
 async function handleReplErrors(payload: { code: string; errors: string[] }) {
   if (isStreaming.value) return; // Don't interrupt if already streaming
 
-  console.log('[App] handleReplErrors called with errors:', payload.errors);
+  // Increment retry count
+  devReplRetryCount.value++;
+  console.log(`[App] handleReplErrors called (attempt ${devReplRetryCount.value}/${MAX_DEV_REPL_RETRIES}) with errors:`, payload.errors);
+
+  // Check if we've exceeded retry limit
+  if (devReplRetryCount.value > MAX_DEV_REPL_RETRIES) {
+    console.log('[App] Max retries exceeded, resetting dev session and starting fresh with SA spec');
+
+    // Clear dev agent messages to start fresh
+    clearMessages('dev');
+
+    // Reset retry counter
+    devReplRetryCount.value = 0;
+
+    // Get SA document and restart dev process
+    const saDocument = context.value.saDocument;
+    if (saDocument) {
+      // Start fresh dev session with SA spec
+      await proceedToDev(saDocument);
+    } else {
+      console.error('[App] No SA document found for reset');
+      setAgentStatus('dev', 'error');
+    }
+    return;
+  }
 
   setStep('dev-implementation');
   setAgentStatus('dev', 'processing');
@@ -658,7 +691,7 @@ async function handleReplErrors(payload: { code: string; errors: string[] }) {
   const scriptTag = '<scr' + 'ipt setup>';
   const scriptCloseTag = '</scr' + 'ipt>';
 
-  const errorMessage = `🚨 COMPILE ERROR - โค้ดมี syntax errors ต้องแก้ไข
+  const errorMessage = `🚨 COMPILE ERROR - โค้ดมี syntax errors ต้องแก้ไข (attempt ${devReplRetryCount.value}/${MAX_DEV_REPL_RETRIES})
 
 ## Errors Found:
 ${payload.errors.map(e => `- ${e}`).join('\n')}
@@ -696,6 +729,10 @@ ${payload.code}
 // Handle VueReplPreview ready event - code compiled successfully without errors
 function handleReplReady() {
   console.log('[App] VueReplPreview ready - no errors, proceeding to preview');
+
+  // Reset retry counter on success
+  devReplRetryCount.value = 0;
+
   // Only proceed to preview if we're in dev-implementation step
   if (currentStep.value === 'dev-implementation') {
     setAgentStatus('dev', 'complete');
