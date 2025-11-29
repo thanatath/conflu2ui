@@ -48,13 +48,13 @@
       </div>
 
       <!-- Workflow Tab -->
-      <div v-else class="two-column-layout">
-        <!-- Left Column: Workflow Progress (Always visible) -->
+      <div v-else class="three-column-layout">
+        <!-- Left Column: Workflow Progress -->
         <aside class="workflow-sidebar">
           <WorkflowProgress :current-step="currentStep" />
         </aside>
 
-        <!-- Right Column: Current Step Content -->
+        <!-- Center Column: Current Step Content -->
         <section class="step-content">
         <!-- Step 1: Upload User Story -->
         <div v-if="currentStep === 'upload-story'" class="step-container animate-slide-in-up">
@@ -209,6 +209,16 @@
           </div>
         </div>
         </section>
+
+        <!-- Right Column: AI Team -->
+        <aside class="ai-team-sidebar">
+          <FloatingAgentIndicator
+            :current-step="currentStep"
+            :sessions="sessions"
+            :is-streaming="isStreaming"
+            :current-agent="currentAgent"
+          />
+        </aside>
       </div>
     </main>
 
@@ -878,63 +888,74 @@ async function handleDevIteration(message: string) {
 
 /* Main Content */
 .main-content {
-  max-width: 1400px;
+  max-width: 1800px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 32px 48px;
 }
 
 .documents-tab-content {
-  max-width: 1400px;
+  max-width: 1800px;
   margin: 0 auto;
-  padding: 24px;
+  padding: 32px 48px;
 }
 
-.two-column-layout {
+.three-column-layout {
   display: grid;
-  grid-template-columns: 280px 1fr;
-  gap: 24px;
+  grid-template-columns: 320px 1fr 380px;
+  gap: 32px;
   align-items: start;
 }
 
 .workflow-sidebar {
   position: sticky;
-  top: 24px;
+  top: 32px;
+}
+
+.ai-team-sidebar {
+  position: sticky;
+  top: 32px;
 }
 
 .step-content {
-  min-height: 400px;
+  min-height: 500px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
 }
 
 .step-container {
   width: 100%;
+  max-width: 800px;
 }
 
 /* Agent workspace: 2-column layout for SA/DEV */
 .agent-workspace {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 24px;
-  height: 600px;
+  gap: 32px;
+  height: calc(100vh - 200px);
+  min-height: 600px;
 }
 
 .chat-panel {
-  padding: 24px;
+  padding: 28px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  max-height: 600px;
+  max-height: calc(100vh - 200px);
   min-width: 0;
 }
 
 .chat-panel h2 {
-  font-size: 24px;
-  margin-bottom: 8px;
+  font-size: 28px;
+  margin-bottom: 12px;
   flex-shrink: 0;
 }
 
 .chat-panel > p {
-  margin-bottom: 16px;
+  margin-bottom: 20px;
   flex-shrink: 0;
+  font-size: 15px;
 }
 
 /* Allow message stream to scroll within chat panel */
@@ -949,13 +970,30 @@ async function handleDevIteration(message: string) {
 .code-panel {
   display: flex;
   flex-direction: column;
-  max-height: 600px;
+  max-height: calc(100vh - 200px);
   overflow: hidden;
 }
 
 /* Responsive: Stack on smaller screens */
+@media (max-width: 1400px) {
+  .three-column-layout {
+    grid-template-columns: 280px 1fr 320px;
+    gap: 24px;
+  }
+}
+
+@media (max-width: 1200px) {
+  .three-column-layout {
+    grid-template-columns: 260px 1fr;
+  }
+
+  .ai-team-sidebar {
+    display: none;
+  }
+}
+
 @media (max-width: 1024px) {
-  .two-column-layout {
+  .three-column-layout {
     grid-template-columns: 1fr;
   }
 

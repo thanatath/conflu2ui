@@ -170,22 +170,22 @@ const progressPercentage = computed(() => {
 
 <style scoped>
 .workflow-progress {
-    padding: 16px;
+    padding: 24px;
 }
 
 /* Phase Header */
 .phase-header {
-    margin-bottom: 16px;
+    margin-bottom: 24px;
     text-align: center;
 }
 
 .phase-badge {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    border-radius: 16px;
-    font-size: 12px;
+    gap: 10px;
+    padding: 10px 20px;
+    border-radius: 20px;
+    font-size: 15px;
     font-weight: 600;
 }
 
@@ -208,7 +208,7 @@ const progressPercentage = computed(() => {
 }
 
 .phase-icon {
-    font-size: 16px;
+    font-size: 20px;
 }
 
 /* Agent Flow - Horizontal layout */
@@ -216,25 +216,25 @@ const progressPercentage = computed(() => {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 16px;
-    padding: 10px 8px;
+    margin-bottom: 24px;
+    padding: 16px 12px;
     background: rgba(255, 255, 255, 0.02);
-    border-radius: 10px;
+    border-radius: 14px;
 }
 
 .agent-node {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 4px;
-    padding: 8px 12px;
-    border-radius: 8px;
+    gap: 8px;
+    padding: 12px 16px;
+    border-radius: 12px;
     background: rgba(255, 255, 255, 0.03);
     border: 1px solid rgba(255, 255, 255, 0.05);
     opacity: 0.5;
     transition: all 0.3s ease;
     flex: 1;
-    max-width: 70px;
+    max-width: 90px;
 }
 
 .agent-node.active {
@@ -251,13 +251,13 @@ const progressPercentage = computed(() => {
 }
 
 .node-icon {
-    width: 32px;
-    height: 32px;
+    width: 44px;
+    height: 44px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border-radius: 8px;
-    font-size: 16px;
+    border-radius: 12px;
+    font-size: 22px;
 }
 
 .node-icon.ba { background: linear-gradient(135deg, #667eea, #764ba2); }
@@ -265,7 +265,7 @@ const progressPercentage = computed(() => {
 .node-icon.dev { background: linear-gradient(135deg, #4facfe, #00f2fe); }
 
 .node-label {
-    font-size: 10px;
+    font-size: 13px;
     font-weight: 700;
     color: var(--text-secondary);
     text-transform: uppercase;
@@ -293,31 +293,37 @@ const progressPercentage = computed(() => {
 .progress-section {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin-bottom: 14px;
-    padding: 0 2px;
+    gap: 14px;
+    margin-bottom: 20px;
+    padding: 0 4px;
+}
+
+.progress-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-secondary);
 }
 
 .progress-bar {
     flex: 1;
-    height: 6px;
+    height: 10px;
     background: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
+    border-radius: 5px;
     overflow: hidden;
 }
 
 .progress-fill {
     height: 100%;
     background: linear-gradient(90deg, #a78bfa, #22d3ee);
-    border-radius: 3px;
+    border-radius: 5px;
     transition: width 0.5s ease;
 }
 
 .progress-text {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    min-width: 36px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text-primary);
+    min-width: 45px;
     text-align: right;
 }
 
@@ -325,39 +331,39 @@ const progressPercentage = computed(() => {
 .steps-list {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 6px;
 }
 
 .step-row {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 6px 8px;
-    border-radius: 6px;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 10px;
     opacity: 0.4;
     transition: all 0.2s ease;
 }
 
 .step-row.completed {
-    opacity: 0.65;
+    opacity: 0.7;
 }
 
 .step-row.active {
     opacity: 1;
     background: rgba(160, 80, 255, 0.1);
-    border-left: 3px solid var(--primary);
+    border-left: 4px solid var(--primary);
 }
 
 .step-marker {
-    width: 20px;
-    height: 20px;
-    border-radius: 5px;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
     background: rgba(255, 255, 255, 0.05);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 10px;
-    font-weight: 600;
+    font-size: 13px;
+    font-weight: 700;
     color: var(--text-muted);
     flex-shrink: 0;
 }
@@ -373,13 +379,13 @@ const progressPercentage = computed(() => {
 }
 
 .step-name {
-    font-size: 11px;
+    font-size: 14px;
     color: var(--text-secondary);
 }
 
 .step-row.active .step-name {
     color: var(--text-primary);
-    font-weight: 500;
+    font-weight: 600;
 }
 
 /* Responsive */
