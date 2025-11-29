@@ -1,11 +1,5 @@
-/* Kanit Font - Local */
-@font-face {
-  font-family: 'Kanit';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('../fonts/Kanit-Regular.woff2') format('woff2');
-}
+/* Kanit Font - Google Fonts CDN fallback */
+@import url('https://fonts.googleapis.com/css2?family=Kanit:wght@400&display=swap');
 
 :root {
   /* Color Palette */
