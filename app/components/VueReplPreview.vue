@@ -177,11 +177,37 @@ const lineCount = computed(() => {
   return props.code.split('\n').length;
 });
 
+// Get current code from REPL store (reflects user edits in the editor)
+function getCurrentCodeFromRepl(): string {
+  if (!replStore.value) return props.code || '';
+
+  try {
+    // Get the current file content from the REPL store
+    const files = replStore.value.files;
+    const mainFile = replStore.value.mainFile || 'App.vue';
+
+    if (files && files[mainFile]) {
+      // The file object has a 'code' property with the current content
+      const fileContent = files[mainFile].code || files[mainFile];
+      if (typeof fileContent === 'string' && fileContent.trim()) {
+        return fileContent;
+      }
+    }
+  } catch (e) {
+    console.warn('[VueReplPreview] Could not get code from REPL store:', e);
+  }
+
+  // Fallback to props.code
+  return props.code || '';
+}
+
 // Open full preview in new window
 function openFullPreview() {
-  // Save code to localStorage for the new window to read
-  if (props.code) {
-    localStorage.setItem('preview-code', props.code);
+  // Get the latest code from REPL store (includes user edits)
+  const currentCode = getCurrentCodeFromRepl();
+
+  if (currentCode) {
+    localStorage.setItem('preview-code', currentCode);
   }
   window.open('/preview', '_blank', 'noopener,noreferrer');
 }
