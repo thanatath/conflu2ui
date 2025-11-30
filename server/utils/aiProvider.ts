@@ -1,5 +1,6 @@
 import type { AIMessage, AIStreamOptions, AIStreamChunk } from '../types/agents';
 import { ProxyAgent, fetch as undiciFetch } from 'undici';
+import { isAnthropicModel, streamAnthropic } from './anthropicAdapter';
 
 // Retry configuration
 const RETRY_CONFIG = {
@@ -244,7 +245,16 @@ export async function* streamAIResponse(
     model?: string,
     temperature: number = 0.7
 ): AsyncGenerator<AIStreamChunk> {
-    // Currently using Z.ai API (configurable via env)
-    // Future: Add provider detection and routing (OpenAI, Claude, Gemini, etc.)
-    yield* streamOpenAI(messages, model, temperature);
+    // Get default model from config if not provided
+    const config = useRuntimeConfig();
+    const selectedModel = model || config.aiProviderModel;
+
+    // Route to appropriate provider based on model prefix
+    if (isAnthropicModel(selectedModel)) {
+        console.log('[AI Router] Routing to Anthropic adapter for model:', selectedModel);
+        yield* streamAnthropic(messages, selectedModel, temperature);
+    } else {
+        console.log('[AI Router] Routing to OpenAI-compatible adapter for model:', selectedModel);
+        yield* streamOpenAI(messages, model, temperature);
+    }
 }
