@@ -307,37 +307,31 @@ transition: zoom-in
 
 # Live Demo
 
-<div class="text-xl text-gray-400 mb-12">Conception Preview</div>
+<div class="text-lg text-gray-400 mb-6">Conception Preview</div>
 
-<div class="relative w-full max-w-3xl mx-auto">
-  <div class="bg-zinc-900 border border-zinc-700 rounded-2xl overflow-hidden shadow-2xl">
-    <div class="bg-zinc-800 px-4 py-3 flex items-center gap-2">
-      <div class="flex gap-2">
-        <div class="w-3 h-3 rounded-full bg-red-500/80"></div>
-        <div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
-        <div class="w-3 h-3 rounded-full bg-green-500/80"></div>
-      </div>
-      <div class="flex-1 text-center">
-        <span class="text-gray-500 text-sm font-mono">conflu2ui.app</span>
-      </div>
-    </div>
-    <div class="h-64 flex items-center justify-center bg-gradient-to-br from-zinc-900 to-zinc-800">
-      <div class="text-center">
-        <div class="text-6xl mb-4 animate-bounce">🎬</div>
-        <div class="text-gray-400 text-lg">Video Demo Placeholder</div>
-        <div class="text-gray-600 text-sm mt-2 font-mono">[ Insert recorded demo here ]</div>
-      </div>
-    </div>
-  </div>
+<div class="relative w-full max-w-4xl mx-auto">
+<div class="bg-zinc-900 border border-zinc-700 rounded-2xl overflow-hidden shadow-2xl">
+<div class="bg-zinc-800 px-4 py-2 flex items-center gap-2">
+<div class="flex gap-2">
+<div class="w-3 h-3 rounded-full bg-red-500/80"></div>
+<div class="w-3 h-3 rounded-full bg-yellow-500/80"></div>
+<div class="w-3 h-3 rounded-full bg-green-500/80"></div>
+</div>
+<div class="flex-1 text-center">
+<span class="text-gray-500 text-sm font-mono">conflu2ui.thanatach.com</span>
+</div>
+</div>
+<video src="/video.webm" class="w-full" controls></video>
+</div>
 </div>
 
-<div v-click class="mt-8 flex justify-center gap-6">
-  <div class="bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2">
-    <span class="text-indigo-400 font-mono text-sm">Real-time Streaming</span>
-  </div>
-  <div class="bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2">
-    <span class="text-green-400 font-mono text-sm">Live Code Editing</span>
-  </div>
+<div v-click class="mt-6 flex justify-center gap-6">
+<div class="bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2">
+<span class="text-indigo-400 font-mono text-sm">Real-time Streaming</span>
+</div>
+<div class="bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2">
+<span class="text-green-400 font-mono text-sm">Live Code Editing</span>
+</div>
   <div class="bg-zinc-800/50 border border-zinc-700 rounded-lg px-4 py-2">
     <span class="text-purple-400 font-mono text-sm">Instant Preview</span>
   </div>
