@@ -60,7 +60,7 @@ h1 {
 ---
 transition: fade-out
 layout: image-right
-image: /The Waiting Game.jpg
+image: /The_Waiting_Game.jpg
 backgroundSize: contain
 class: my-auto
 ---
@@ -107,7 +107,7 @@ class: my-auto
 
 ---
 layout: image-left
-image: /The Solution.png
+image: /The_Solution.png
 backgroundSize: contain
 class: my-auto
 transition: slide-up
@@ -209,7 +209,7 @@ transition: slide-left
 
 ---
 layout: image-right
-image: /Why We're Different.png
+image: /Why_Were_Different.png
 backgroundSize: contain
 class: my-auto
 transition: fade
@@ -268,9 +268,9 @@ transition: fade
 <div>
 <div class="text-gray-500 text-sm font-mono mb-3">Prompt to Product ในตลาด</div>
 <div class="grid grid-cols-3 gap-2">
-<img src="/Our Secret Sauce.jpg" class="w-full h-20 object-cover rounded-lg border border-zinc-700 opacity-70" />
-<img src="/Our Secret Sauce_2.webp" class="w-full h-20 object-cover rounded-lg border border-zinc-700 opacity-70" />
-<img src="/Our Secret Sauce_3.png" class="w-full h-20 object-cover rounded-lg border border-zinc-700 opacity-70" />
+<img src="/Our_Secret_Sauce.jpg" class="w-full h-20 object-cover rounded-lg border border-zinc-700 opacity-70" />
+<img src="/Our_Secret_Sauce_2.webp" class="w-full h-20 object-cover rounded-lg border border-zinc-700 opacity-70" />
+<img src="/Our_Secret_Sauce_3.png" class="w-full h-20 object-cover rounded-lg border border-zinc-700 opacity-70" />
 </div>
 <div class="mt-3 text-sm text-gray-400 space-y-1">
 <div><span class="text-yellow-400">→</span> Single LLM ตัวเดียว</div>
